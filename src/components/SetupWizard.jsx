@@ -67,15 +67,27 @@ export default function SetupWizard({ onComplete, onRommConnect }) {
   }
 
   async function handleSyncRomM() {
-    if (!rommToken || !rommUrl) return;
+    if (!rommUrl) return;
     try {
       setSyncing(true);
       setSyncResult(null);
       setError(null);
       const normalizedUrl = normalizeUrl(rommUrl);
+
+      if (!rommConnected) {
+        const token = await invoke("connect_romm", {
+          serverUrl: normalizedUrl,
+          username: rommUsername,
+          password: rommPassword,
+        });
+        setRommConnected(true);
+        setRommToken(token);
+        if (onRommConnect) onRommConnect(normalizedUrl, token);
+      }
+
       const games = await invoke("sync_romm_library", {
         serverUrl: normalizedUrl,
-        token: rommToken,
+        token: rommToken || "re-auth",
       });
       setSyncResult({ total: games.length });
     } catch (err) {

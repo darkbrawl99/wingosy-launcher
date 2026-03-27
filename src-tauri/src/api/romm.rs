@@ -207,8 +207,11 @@ pub struct PaginatedResponse<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomMPlatform {
     pub id: i32,
+    #[serde(default)]
     pub slug: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub rom_count: i32,
     #[serde(default)]
     pub igdb_id: Option<i32>,
@@ -233,12 +236,15 @@ pub struct IgdbMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomMRom {
     pub id: i32,
+    #[serde(default)]
     pub platform_id: i32,
+    #[serde(default)]
     pub platform_slug: String,
+    #[serde(default)]
     pub name: String,
-    #[serde(alias = "file_name")]
+    #[serde(default, alias = "file_name")]
     pub fs_name: String,
-    #[serde(alias = "file_size_bytes")]
+    #[serde(default, alias = "file_size_bytes")]
     pub fs_size_bytes: i64,
 
     #[serde(default)]

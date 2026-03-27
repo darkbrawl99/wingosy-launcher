@@ -75,13 +75,30 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   }
 
   async function handleSyncRomM() {
-    if (!rommUrl || !rommToken) return;
+    if (!rommUrl) {
+      setRommStatus({ type: "error", message: "Enter a server URL first." });
+      return;
+    }
     try {
       setRommStatus({ type: "info", message: "Syncing library..." });
       const normalizedUrl = normalizeUrl(rommUrl);
+
+      if (!rommToken) {
+        if (!rommUsername || !rommPassword) {
+          setRommStatus({ type: "error", message: "Enter credentials and click Connect first." });
+          return;
+        }
+        const token = await invoke("connect_romm", {
+          serverUrl: normalizedUrl,
+          username: rommUsername,
+          password: rommPassword,
+        });
+        onRommConnect(normalizedUrl, token);
+      }
+
       const games = await invoke("sync_romm_library", {
         serverUrl: normalizedUrl,
-        token: rommToken,
+        token: rommToken || "re-auth",
       });
       setRommStatus({
         type: "success",
