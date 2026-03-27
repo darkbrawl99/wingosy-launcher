@@ -221,79 +221,109 @@ pub async fn sync_romm_library(server_url: String, _token: String) -> CommandRes
 
     let db = get_db()?;
 
-    let romm_platforms = client.get_platforms().await.map_err(CommandError::from)?;
     let mut all_games = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+    let covers_dir = AppConfig::covers_dir().unwrap_or_default();
+    std::fs::create_dir_all(&covers_dir).ok();
+    let page_size = 100;
+    let mut offset = 0;
 
-    for platform in romm_platforms {
-        let mapped_platform = map_romm_slug(&platform.slug);
-        let page_size = 1000;
-        let mut offset = 0;
+    loop {
+        let roms = client
+            .get_roms(None, page_size, offset)
+            .await
+            .map_err(CommandError::from)?;
 
-        loop {
-            let roms = client
-                .get_roms(Some(platform.id), page_size, offset)
-                .await
-                .map_err(CommandError::from)?;
-
-            for rom in &roms.items {
-                let release_year = rom.first_release_date().and_then(|ts| {
-                    chrono::DateTime::from_timestamp(ts, 0)
-                        .map(|dt| {
-                            use chrono::Datelike;
-                            dt.year() as i32
-                        })
-                }).filter(|&y| y > 0);
-
-                let mut game = Game {
-                    id: 0,
-                    platform_id: mapped_platform.clone(),
-                    name: rom.name.clone(),
-                    file_path: rom.fs_name.clone(),
-                    source: GameSource::RomM,
-                    romm_id: Some(rom.id),
-                    summary: rom.summary.clone(),
-                    developer: None,
-                    publisher: None,
-                    release_year,
-                    genres: rom.genres(),
-                    player_count: None,
-                    cover_path: None,
-                    screenshot_paths: Vec::new(),
-                    is_favorite: false,
-                    is_hidden: false,
-                    user_rating: rom.aggregated_rating(),
-                    last_played_at: None,
-                    play_count: 0,
-                    play_time_minutes: 0,
-                    sync_state: SyncState::RemoteOnly,
-                    local_file_path: None,
-                };
-
-                if let Some(ref cover_url) = rom.url_cover {
-                    let covers_dir = AppConfig::covers_dir().unwrap_or_default();
-                    std::fs::create_dir_all(&covers_dir).ok();
-                    let cover_path = covers_dir.join(format!("{}.jpg", rom.id));
-                    if !cover_path.exists() {
-                        let dl = crate::api::download::DownloadManager::new();
-                        if let Ok(bytes) = dl.download_bytes(cover_url, None).await {
-                            if bytes.len() > 100 {
-                                std::fs::write(&cover_path, &bytes).ok();
-                            }
-                        }
-                    }
-                    game.cover_path = Some(cover_path.to_string_lossy().to_string());
-                }
-
-                let _ = db.upsert_game(&game);
-                all_games.push(game);
-            }
-
-            let fetched = offset + roms.items.len() as i32;
-            if fetched >= roms.total {
-                break;
-            }
-            offset = fetched;
+        if roms.items.is_empty() {
+            break;
         }
+
+        for rom in &roms.items {
+            if !seen_ids.insert(rom.id) {
+                continue;
+            }
+
+            let mapped_platform = map_romm_slug(&rom.platform_slug);
+            let release_year = rom.first_release_date().and_then(|ts| {
+                chrono::DateTime::from_timestamp(ts, 0)
+                    .map(|dt| {
+                        use chrono::Datelike;
+                        dt.year() as i32
+                    })
+            }).filter(|&y| y > 0);
+
+            let cover_path = rom.url_cover.as_ref().map(|_| {
+                covers_dir.join(format!("{}.jpg", rom.id)).to_string_lossy().to_string()
+            });
+
+            let game = Game {
+                id: 0,
+                platform_id: mapped_platform,
+                name: rom.name.clone(),
+                file_path: rom.fs_name.clone(),
+                source: GameSource::RomM,
+                romm_id: Some(rom.id),
+                summary: rom.summary.clone(),
+                developer: None,
+                publisher: None,
+                release_year,
+                genres: rom.genres(),
+                player_count: None,
+                cover_path,
+                screenshot_paths: Vec::new(),
+                is_favorite: false,
+                is_hidden: false,
+                user_rating: rom.aggregated_rating(),
+                last_played_at: None,
+                play_count: 0,
+                play_time_minutes: 0,
+                sync_state: SyncState::RemoteOnly,
+                local_file_path: None,
+            };
+
+            let _ = db.upsert_game(&game);
+            all_games.push(game);
+        }
+
+        let fetched = offset + roms.items.len() as i32;
+        if fetched >= roms.total {
+            break;
+        }
+        offset = fetched;
+    }
+
+    // Download covers in background (don't block sync)
+    let covers_dir_bg = covers_dir.clone();
+    let roms_for_covers: Vec<(i32, String)> = all_games.iter()
+        .filter_map(|g| {
+            g.romm_id.and_then(|rid| {
+                g.cover_path.as_ref().map(|_| {
+                    let cover_file = covers_dir_bg.join(format!("{}.jpg", rid));
+                    if cover_file.exists() { return None; }
+                    Some((rid, g.name.clone()))
+                }).flatten()
+            })
+        })
+        .collect();
+
+    if !roms_for_covers.is_empty() {
+        let server = server_url.clone();
+        let user = username.clone();
+        let pass = password.clone();
+        tokio::spawn(async move {
+            let mut dl_client = crate::api::RomMClient::new(&server);
+            if dl_client.authenticate(&user, &pass).await.is_err() { return; }
+            let dl = crate::api::download::DownloadManager::new();
+            for (rom_id, _name) in roms_for_covers {
+                let cover_url = dl_client.cover_url(rom_id);
+                let cover_path = covers_dir_bg.join(format!("{}.jpg", rom_id));
+                if let Ok(bytes) = dl.download_bytes(&cover_url, dl_client.token()).await {
+                    if bytes.len() > 100 {
+                        std::fs::write(&cover_path, &bytes).ok();
+                    }
+                }
+            }
+        });
     }
 
     Ok(all_games)
