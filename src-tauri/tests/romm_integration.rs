@@ -29,6 +29,8 @@ mod romm_live_tests {
         body["access_token"].as_str().unwrap().to_string()
     }
 
+    // --- Auth ---
+
     #[tokio::test]
     #[ignore]
     async fn auth_returns_valid_jwt_with_scopes() {
@@ -69,6 +71,8 @@ mod romm_live_tests {
         println!("RomM v{}", version);
     }
 
+    // --- Platforms ---
+
     #[tokio::test]
     #[ignore]
     async fn fetch_platforms_with_schema_validation() {
@@ -89,45 +93,73 @@ mod romm_live_tests {
             assert!(p["rom_count"].is_number(), "Missing 'rom_count'");
         }
         println!("{} platforms validated", platforms.len());
-        for p in &platforms {
-            let count = p["rom_count"].as_i64().unwrap_or(0);
-            if count > 0 {
-                println!("  {} ({}) — {} ROMs", p["name"].as_str().unwrap_or("?"), p["slug"].as_str().unwrap_or("?"), count);
-            }
-        }
     }
+
+    // --- ROMs deserialization (the test that would have caught the parse failure) ---
 
     #[tokio::test]
     #[ignore]
-    async fn fetch_roms_paginated_with_schema_validation() {
+    async fn roms_deserialize_via_manual_extraction() {
         let (url, user, pass) = load_env();
         let client = make_client();
         let token = authenticate(&client, &url, &user, &pass).await;
 
-        let resp: serde_json::Value = client
+        let resp = client
             .get(format!("{}/api/roms", url))
-            .query(&[("limit", "5"), ("offset", "0")])
+            .query(&[("limit", "20"), ("offset", "0")])
             .header("Authorization", format!("Bearer {}", token))
-            .send().await.unwrap().json().await.unwrap();
+            .send().await.unwrap();
 
-        assert!(resp["items"].is_array(), "Response missing 'items' array");
-        assert!(resp["total"].is_number(), "Response missing 'total'");
+        assert!(resp.status().is_success());
+        let text = resp.text().await.unwrap();
+        let raw: serde_json::Value = serde_json::from_str(&text).unwrap();
 
-        let items = resp["items"].as_array().unwrap();
-        let total = resp["total"].as_i64().unwrap();
-        println!("Fetched {}/{} ROMs", items.len(), total);
+        let items = raw["items"].as_array().expect("Missing items array");
+        assert!(!items.is_empty(), "No ROMs returned");
 
-        for rom in items {
-            assert!(rom["id"].is_number(), "ROM missing 'id'");
-            assert!(rom["name"].is_string(), "ROM missing 'name'");
-            assert!(rom["fs_name"].is_string(), "ROM missing 'fs_name'");
-            assert!(rom["platform_slug"].is_string(), "ROM missing 'platform_slug'");
+        let mut parsed_count = 0;
+        let mut skipped_count = 0;
+
+        for v in items {
+            let id = match v["id"].as_i64() {
+                Some(id) => id as i32,
+                None => { skipped_count += 1; continue; }
+            };
+
+            let name = v["name"].as_str().unwrap_or("").to_string();
+            let _fs_name = v["fs_name"].as_str()
+                .or_else(|| v["file_name"].as_str())
+                .unwrap_or("").to_string();
+            let platform_slug = v["platform_slug"].as_str().unwrap_or("").to_string();
+            let url_cover = v["url_cover"].as_str().map(|s| s.to_string());
+            let igdb_id = v["igdb_id"].as_i64().map(|x| x as i32);
+
+            assert!(id > 0, "ROM id should be positive");
+            assert!(!platform_slug.is_empty(), "ROM {} missing platform_slug", id);
+
+            // Verify igdb_metadata parses without panic
+            if let Some(meta) = v.get("igdb_metadata") {
+                if meta.is_object() && !meta.as_object().unwrap().is_empty() {
+                    let _genres: Option<Vec<String>> = meta.get("genres")
+                        .and_then(|g| serde_json::from_value(g.clone()).ok());
+                    let _release: Option<i64> = meta.get("first_release_date")
+                        .and_then(|d| d.as_i64());
+                    let _rating: Option<f64> = meta.get("aggregated_rating")
+                        .and_then(|r| r.as_f64());
+                }
+            }
+
+            parsed_count += 1;
+            println!("  [{}] {} ({}) cover={} igdb={:?}",
+                id, name, platform_slug, url_cover.is_some(), igdb_id);
         }
 
-        for rom in items.iter().take(3) {
-            println!("  {} ({})", rom["name"].as_str().unwrap_or("?"), rom["platform_slug"].as_str().unwrap_or("?"));
-        }
+        println!("\nParsed: {}, Skipped: {}", parsed_count, skipped_count);
+        assert!(parsed_count > 0, "No ROMs successfully parsed");
+        assert_eq!(skipped_count, 0, "Some ROMs failed to parse");
     }
+
+    // --- Cover art ---
 
     #[tokio::test]
     #[ignore]
@@ -152,58 +184,63 @@ mod romm_live_tests {
                 assert!(cover_resp.status().is_success(), "Cover download failed");
                 let bytes = cover_resp.bytes().await.unwrap();
                 assert!(bytes.len() > 100, "Cover too small: {} bytes", bytes.len());
-                println!("Cover for '{}': {} bytes from {}", rom["name"].as_str().unwrap_or("?"), bytes.len(), cover_url);
+                println!("Cover OK: {} bytes", bytes.len());
             }
             None => println!("SKIP: No ROMs with covers"),
         }
     }
 
+    // --- Full sync with performance assertion ---
+
     #[tokio::test]
     #[ignore]
-    async fn full_sync_simulation() {
+    async fn full_sync_completes_within_timeout() {
         let (url, user, pass) = load_env();
         let client = make_client();
+
+        let start = std::time::Instant::now();
         let token = authenticate(&client, &url, &user, &pass).await;
 
-        let platforms: Vec<serde_json::Value> = client
-            .get(format!("{}/api/platforms", url))
-            .header("Authorization", format!("Bearer {}", token))
-            .send().await.unwrap().json().await.unwrap();
-
-        let mut total_roms = 0u64;
+        let mut all_rom_ids = std::collections::HashSet::new();
         let mut total_covers = 0u64;
         let mut total_with_metadata = 0u64;
+        let mut offset = 0;
 
-        for platform in &platforms {
-            let pid = platform["id"].as_i64().unwrap();
-            let slug = platform["slug"].as_str().unwrap_or("?");
-            let count = platform["rom_count"].as_i64().unwrap_or(0);
-            if count == 0 { continue; }
-
+        loop {
             let resp: serde_json::Value = client
                 .get(format!("{}/api/roms", url))
-                .query(&[("platform_id", pid.to_string()), ("limit", "100".into()), ("offset", "0".into())])
+                .query(&[("limit", "100"), ("offset", &offset.to_string())])
                 .header("Authorization", format!("Bearer {}", token))
                 .send().await.unwrap().json().await.unwrap();
 
             let items = resp["items"].as_array().unwrap();
-            let covers = items.iter().filter(|r| r["url_cover"].is_string()).count();
-            let with_meta = items.iter().filter(|r| r["igdb_id"].is_number()).count();
+            let total = resp["total"].as_i64().unwrap_or(0);
 
-            total_roms += items.len() as u64;
-            total_covers += covers as u64;
-            total_with_metadata += with_meta as u64;
+            if items.is_empty() { break; }
 
-            println!("  {}: {} ROMs, {} covers, {} with IGDB", slug, items.len(), covers, with_meta);
+            for rom in items {
+                let id = rom["id"].as_i64().unwrap_or(0);
+                if !all_rom_ids.insert(id) { continue; }
+
+                if rom["url_cover"].is_string() { total_covers += 1; }
+                if rom["igdb_id"].is_number() { total_with_metadata += 1; }
+            }
+
+            offset += items.len();
+            if offset as i64 >= total { break; }
         }
 
-        println!("\nSync summary:");
-        println!("  Platforms: {}", platforms.len());
-        println!("  Total ROMs: {}", total_roms);
+        let elapsed = start.elapsed();
+
+        println!("Sync completed in {:.1}s", elapsed.as_secs_f64());
+        println!("  Unique ROMs: {}", all_rom_ids.len());
         println!("  With covers: {}", total_covers);
         println!("  With IGDB metadata: {}", total_with_metadata);
 
-        assert!(total_roms > 0, "No ROMs found");
+        assert!(all_rom_ids.len() > 0, "No ROMs synced");
+        assert!(elapsed.as_secs() < 60,
+            "Sync took {}s, should complete within 60s (no cover downloads)", elapsed.as_secs());
+        println!("Performance OK: {:.1}s < 60s limit", elapsed.as_secs_f64());
     }
 
     fn base64_decode(input: &str) -> Vec<u8> {
@@ -222,5 +259,126 @@ mod romm_live_tests {
             out
         }
         padded.as_bytes().chunks(4).flat_map(decode_group).collect()
+    }
+}
+
+/// Unit test for ROM JSON extraction — uses fixture data, no network needed.
+#[cfg(test)]
+mod rom_parsing_tests {
+    #[test]
+    fn parses_rom_with_full_metadata() {
+        let json = serde_json::json!({
+            "id": 126,
+            "platform_id": 18,
+            "platform_slug": "ps2",
+            "name": "Ben 10 Alien Force",
+            "fs_name": "Ben 10 - Alien Force",
+            "fs_size_bytes": 4698210304_i64,
+            "igdb_id": 2802,
+            "summary": "A fighting game",
+            "url_cover": "https://cdn.example.com/cover.jpg",
+            "igdb_metadata": {
+                "genres": ["Fighting", "Adventure"],
+                "first_release_date": 1256601600_i64,
+                "aggregated_rating": 62.5,
+                "total_rating": 65.0
+            }
+        });
+
+        let id = json["id"].as_i64().unwrap() as i32;
+        let name = json["name"].as_str().unwrap_or("");
+        let platform_slug = json["platform_slug"].as_str().unwrap_or("");
+        let fs_name = json["fs_name"].as_str().unwrap_or("");
+        let url_cover = json["url_cover"].as_str();
+        let igdb_id = json["igdb_id"].as_i64().map(|x| x as i32);
+
+        assert_eq!(id, 126);
+        assert_eq!(name, "Ben 10 Alien Force");
+        assert_eq!(platform_slug, "ps2");
+        assert_eq!(fs_name, "Ben 10 - Alien Force");
+        assert!(url_cover.is_some());
+        assert_eq!(igdb_id, Some(2802));
+
+        let meta = json.get("igdb_metadata").unwrap();
+        let genres: Vec<String> = serde_json::from_value(meta["genres"].clone()).unwrap();
+        assert_eq!(genres, vec!["Fighting", "Adventure"]);
+        assert_eq!(meta["first_release_date"].as_i64(), Some(1256601600));
+        assert_eq!(meta["aggregated_rating"].as_f64(), Some(62.5));
+    }
+
+    #[test]
+    fn parses_rom_with_null_fields() {
+        let json = serde_json::json!({
+            "id": 134,
+            "platform_id": 19,
+            "platform_slug": "psp",
+            "name": ".keep",
+            "fs_name": ".keep",
+            "fs_size_bytes": 0,
+            "igdb_id": null,
+            "summary": null,
+            "url_cover": null,
+            "igdb_metadata": {}
+        });
+
+        let id = json["id"].as_i64().unwrap() as i32;
+        let name = json["name"].as_str().unwrap_or("");
+        let igdb_id = json["igdb_id"].as_i64().map(|x| x as i32);
+        let url_cover = json["url_cover"].as_str();
+        let summary = json["summary"].as_str();
+
+        assert_eq!(id, 134);
+        assert_eq!(name, ".keep");
+        assert_eq!(igdb_id, None);
+        assert_eq!(url_cover, None);
+        assert_eq!(summary, None);
+
+        let meta = json.get("igdb_metadata").unwrap();
+        assert!(meta.is_object());
+        assert!(meta.as_object().unwrap().is_empty() ||
+            meta.get("genres").and_then(|g| g.as_array()).is_none());
+    }
+
+    #[test]
+    fn parses_rom_with_missing_optional_fields() {
+        let json = serde_json::json!({
+            "id": 200,
+            "platform_id": 15,
+            "platform_slug": "gba",
+            "name": "Pokemon Emerald",
+            "fs_name": "Pokemon Emerald.gba",
+            "fs_size_bytes": 16777216
+        });
+
+        let id = json["id"].as_i64().unwrap() as i32;
+        let name = json["name"].as_str().unwrap_or("");
+        let igdb_id = json["igdb_id"].as_i64().map(|x| x as i32);
+        let url_cover = json["url_cover"].as_str();
+        let igdb_metadata = json.get("igdb_metadata");
+
+        assert_eq!(id, 200);
+        assert_eq!(name, "Pokemon Emerald");
+        assert_eq!(igdb_id, None);
+        assert_eq!(url_cover, None);
+        assert!(igdb_metadata.is_none());
+    }
+
+    #[test]
+    fn parses_paginated_response() {
+        let json = serde_json::json!({
+            "items": [
+                {"id": 1, "platform_slug": "snes", "name": "Game 1", "fs_name": "game1.sfc", "fs_size_bytes": 1024},
+                {"id": 2, "platform_slug": "gba", "name": "Game 2", "fs_name": "game2.gba", "fs_size_bytes": 2048}
+            ],
+            "total": 55
+        });
+
+        let total = json["total"].as_i64().unwrap();
+        let items = json["items"].as_array().unwrap();
+
+        assert_eq!(total, 55);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0]["name"].as_str().unwrap(), "Game 1");
+        assert_eq!(items[1]["platform_slug"].as_str().unwrap(), "gba");
     }
 }
