@@ -91,3 +91,53 @@ pub fn map_romm_slug(slug: &str) -> String {
         other => other.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slug_maps_common_romm_slugs() {
+        assert_eq!(map_romm_slug("sega-genesis"), "genesis");
+        assert_eq!(map_romm_slug("sega-mega-drive-genesis"), "genesis");
+        assert_eq!(map_romm_slug("super-nintendo"), "snes");
+        assert_eq!(map_romm_slug("nintendo-64"), "n64");
+        assert_eq!(map_romm_slug("sony-playstation"), "psx");
+        assert_eq!(map_romm_slug("playstation-2"), "ps2");
+        assert_eq!(map_romm_slug("nintendo-game-boy-advance"), "gba");
+        assert_eq!(map_romm_slug("sega-dreamcast"), "dreamcast");
+        assert_eq!(map_romm_slug("nintendo-switch"), "switch");
+    }
+
+    #[test]
+    fn slug_passes_through_short_ids() {
+        assert_eq!(map_romm_slug("snes"), "snes");
+        assert_eq!(map_romm_slug("nes"), "nes");
+        assert_eq!(map_romm_slug("gba"), "gba");
+        assert_eq!(map_romm_slug("psx"), "psx");
+    }
+
+    #[test]
+    fn slug_unknown_passes_through() {
+        assert_eq!(map_romm_slug("neo-geo-pocket"), "neo-geo-pocket");
+    }
+
+    #[test]
+    fn extension_detects_common() {
+        assert_eq!(detect_platform_by_extension(".sfc"), Some("snes".into()));
+        assert_eq!(detect_platform_by_extension(".nes"), Some("nes".into()));
+        assert_eq!(detect_platform_by_extension(".gba"), Some("gba".into()));
+        assert_eq!(detect_platform_by_extension(".nds"), Some("nds".into()));
+    }
+
+    #[test]
+    fn extension_case_insensitive() {
+        assert_eq!(detect_platform_by_extension(".SFC"), Some("snes".into()));
+        assert_eq!(detect_platform_by_extension(".GBA"), Some("gba".into()));
+    }
+
+    #[test]
+    fn extension_unknown_returns_none() {
+        assert_eq!(detect_platform_by_extension(".xyz"), None);
+    }
+}

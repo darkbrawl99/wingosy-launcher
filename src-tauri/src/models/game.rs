@@ -140,3 +140,33 @@ pub enum GameSort {
     RecentlyAdded,
     Rating,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_source_roundtrip() {
+        assert_eq!(GameSource::from_db_str(GameSource::Local.to_db_str()), GameSource::Local);
+        assert_eq!(GameSource::from_db_str(GameSource::RomM.to_db_str()), GameSource::RomM);
+    }
+
+    #[test]
+    fn game_source_unknown_defaults_to_local() {
+        assert_eq!(GameSource::from_db_str("unknown"), GameSource::Local);
+    }
+
+    #[test]
+    fn formatted_play_time_hours_and_minutes() {
+        let mut game = Game::new("Test".into(), "test.rom".into(), "snes".into());
+        game.play_time_minutes = 125;
+        assert_eq!(game.formatted_play_time(), "2h 5m");
+    }
+
+    #[test]
+    fn formatted_play_time_minutes_only() {
+        let mut game = Game::new("Test".into(), "test.rom".into(), "snes".into());
+        game.play_time_minutes = 45;
+        assert_eq!(game.formatted_play_time(), "45m");
+    }
+}

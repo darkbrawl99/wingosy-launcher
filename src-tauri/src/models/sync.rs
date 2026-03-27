@@ -90,3 +90,36 @@ pub struct SaveFile {
     pub remote_modified: Option<chrono::DateTime<chrono::Utc>>,
     pub sync_state: SyncState,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sync_state_roundtrip_all_variants() {
+        let variants = [
+            SyncState::LocalOnly, SyncState::Synced, SyncState::PendingUpload,
+            SyncState::PendingDownload, SyncState::Conflict, SyncState::RemoteOnly,
+        ];
+        for variant in &variants {
+            let s = variant.to_db_str();
+            let roundtripped = SyncState::from_db_str(s);
+            assert_eq!(*variant, roundtripped);
+        }
+    }
+
+    #[test]
+    fn sync_state_unknown_defaults_to_local_only() {
+        assert_eq!(SyncState::from_db_str("garbage"), SyncState::LocalOnly);
+        assert_eq!(SyncState::from_db_str(""), SyncState::LocalOnly);
+        assert_eq!(SyncState::from_db_str("remoteonly"), SyncState::LocalOnly);
+    }
+
+    #[test]
+    fn sync_state_db_strings_use_underscores() {
+        assert_eq!(SyncState::RemoteOnly.to_db_str(), "remote_only");
+        assert_eq!(SyncState::PendingUpload.to_db_str(), "pending_upload");
+        assert_eq!(SyncState::PendingDownload.to_db_str(), "pending_download");
+        assert_eq!(SyncState::LocalOnly.to_db_str(), "local_only");
+    }
+}
