@@ -63,10 +63,17 @@ impl RomMClient {
 
         let response = request.send().await.context("Failed to fetch platforms")?;
 
-        response
-            .json()
-            .await
-            .context("Failed to parse platforms response")
+        let status = response.status();
+        let text = response.text().await.context("Failed to read platforms response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("Platforms API returned {}: {}", status, &text[..text.len().min(200)]);
+        }
+
+        serde_json::from_str(&text).context(format!(
+            "Failed to parse platforms JSON (first 300 chars): {}",
+            &text[..text.len().min(300)]
+        ))
     }
 
     pub async fn get_roms(
@@ -90,10 +97,17 @@ impl RomMClient {
 
         let response = request.send().await.context("Failed to fetch ROMs")?;
 
-        response
-            .json()
-            .await
-            .context("Failed to parse ROMs response")
+        let status = response.status();
+        let text = response.text().await.context("Failed to read ROMs response body")?;
+
+        if !status.is_success() {
+            anyhow::bail!("ROMs API returned {}: {}", status, &text[..text.len().min(200)]);
+        }
+
+        serde_json::from_str(&text).context(format!(
+            "Failed to parse ROMs JSON (first 300 chars): {}",
+            &text[..text.len().min(300)]
+        ))
     }
 
     pub async fn get_rom(&self, rom_id: i32) -> Result<RomMRom> {
