@@ -1,0 +1,73 @@
+[package]
+name = "wingosy-launcher"
+version = "0.1.0"
+edition = "2021"
+authors = ["Yash Singh"]
+description = "A Windows-native game launcher with RomM integration for managing and launching emulated games"
+license = "GPL-3.0"
+repository = "https://github.com/yashsingh/wingosy-launcher"
+keywords = ["emulation", "romm", "launcher", "gaming", "retro"]
+categories = ["games", "gui"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# GUI framework
+iced = { version = "0.12", features = ["tokio", "image", "svg"] }
+
+# HTTP client for RomM API
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# JSON serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Local database
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Configuration
+directories = "5"
+toml = "0.8"
+
+# File system operations
+walkdir = "2"
+notify = "6"
+
+# Archive extraction
+zip = "2"
+sevenz-rust = "0.6"
+
+# Image processing
+image = "0.25"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Async channels
+tokio-stream = "0.1"
+
+# Platform detection for ROMs
+crc32fast = "1"
+
+# Windows-specific
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.56", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

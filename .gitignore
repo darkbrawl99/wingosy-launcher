@@ -1,0 +1,60 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Environment and secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Debug files
+*.pdb
+
+# Logs
+*.log
+logs/
+
+# Cache directories
+.cache/
+cache/
+
+# Test databases
+*.db
+!schema.sql
+
+# Coverage
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Profiling
+*.profraw
+*.profdata
+
+# Documentation build
+/doc/
+
+# Package files
+*.tar.gz
+*.zip
