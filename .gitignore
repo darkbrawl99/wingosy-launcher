@@ -1,7 +1,10 @@
-# Rust build artifacts
-/target/
+# Node
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
 **/*.rs.bk
-Cargo.lock
 
 # IDE
 .idea/
@@ -10,51 +13,20 @@ Cargo.lock
 *.swo
 *~
 
-# OS files
+# OS
 .DS_Store
 Thumbs.db
 Desktop.ini
 
-# Environment and secrets
+# Environment
 .env
 .env.local
-*.pem
-*.key
-
-# Build outputs
-*.exe
-*.dll
-*.so
-*.dylib
-
-# Debug files
-*.pdb
 
 # Logs
 *.log
-logs/
 
-# Cache directories
-.cache/
-cache/
+# Debug
+*.pdb
 
 # Test databases
 *.db
-!schema.sql
-
-# Coverage
-coverage/
-*.gcov
-*.gcda
-*.gcno
-
-# Profiling
-*.profraw
-*.profdata
-
-# Documentation build
-/doc/
-
-# Package files
-*.tar.gz
-*.zip

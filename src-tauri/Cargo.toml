@@ -1,0 +1,33 @@
+[package]
+name = "wingosy-launcher"
+version = "0.1.0"
+edition = "2021"
+authors = ["Darkbrawl <yashv99@vt.edu>"]
+description = "A Windows-native game launcher with RomM integration"
+license = "GPL-3.0"
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+tauri = { version = "1", features = ["shell-open", "dialog-all", "path-all", "fs-all"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json", "stream", "multipart"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+directories = "5"
+toml = "0.8"
+walkdir = "2"
+zip = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "1"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tokio-stream = "0.1"
+regex-lite = "0.1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
