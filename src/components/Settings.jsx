@@ -19,6 +19,7 @@ import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
+import normalizeUrl from "../utils/normalizeUrl";
 
 export default function Settings({ onBack }) {
   const [config, setConfig] = useState(null);
@@ -57,12 +58,40 @@ export default function Settings({ onBack }) {
   async function handleConnectRomM() {
     try {
       setRommStatus(null);
+      const normalizedUrl = normalizeUrl(rommUrl);
+      setRommUrl(normalizedUrl);
       await invoke("connect_romm", {
-        serverUrl: rommUrl,
+        serverUrl: normalizedUrl,
         username: rommUsername,
         password: rommPassword,
       });
-      setRommStatus({ type: "success", message: "Connected successfully!" });
+      setRommStatus({ type: "success", message: "Connected! Click 'Sync Library' to pull your games." });
+    } catch (err) {
+      setRommStatus({
+        type: "error",
+        message: err.message || String(err),
+      });
+    }
+  }
+
+  async function handleSyncRomM() {
+    if (!rommUrl) return;
+    try {
+      setRommStatus({ type: "info", message: "Syncing library..." });
+      const normalizedUrl = normalizeUrl(rommUrl);
+      const tokenResult = await invoke("connect_romm", {
+        serverUrl: normalizedUrl,
+        username: rommUsername,
+        password: rommPassword,
+      });
+      const games = await invoke("sync_romm_library", {
+        serverUrl: normalizedUrl,
+        token: "authenticated",
+      });
+      setRommStatus({
+        type: "success",
+        message: `Synced ${games.length} games from RomM!`,
+      });
     } catch (err) {
       setRommStatus({
         type: "error",
@@ -94,7 +123,7 @@ export default function Settings({ onBack }) {
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: 800 }}>
+    <Box sx={{ p: 3, maxWidth: 800, mx: "auto" }}>
       <Button
         startIcon={<ArrowBackIcon />}
         onClick={onBack}
@@ -118,7 +147,7 @@ export default function Settings({ onBack }) {
         <TextField
           fullWidth
           label="Server URL"
-          placeholder="https://romm.example.com"
+          placeholder="romm.example.com or 192.168.1.2:3000"
           value={rommUrl}
           onChange={(e) => setRommUrl(e.target.value)}
           sx={{ mb: 2 }}
@@ -141,9 +170,14 @@ export default function Settings({ onBack }) {
             sx={{ flex: 1 }}
           />
         </Box>
-        <Button variant="contained" onClick={handleConnectRomM}>
-          Connect
-        </Button>
+        <Box sx={{ display: "flex", gap: 2 }}>
+          <Button variant="contained" onClick={handleConnectRomM}>
+            Connect
+          </Button>
+          <Button variant="outlined" onClick={handleSyncRomM} disabled={!rommUrl}>
+            Sync Library
+          </Button>
+        </Box>
         {rommStatus && (
           <Alert severity={rommStatus.type} sx={{ mt: 2 }}>
             {rommStatus.message}

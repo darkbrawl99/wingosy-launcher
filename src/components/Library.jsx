@@ -1,4 +1,3 @@
-import { useState } from "react";
 import Box from "@mui/material/Box";
 import TextField from "@mui/material/TextField";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -6,7 +5,10 @@ import Typography from "@mui/material/Typography";
 import Grid from "@mui/material/Grid";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";
+import Button from "@mui/material/Button";
 import SearchIcon from "@mui/icons-material/Search";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import CloudSyncIcon from "@mui/icons-material/CloudSync";
 import GameCard from "./GameCard";
 
 export default function Library({
@@ -17,6 +19,7 @@ export default function Library({
   onSelectGame,
   onToggleFavorite,
   onLaunchGame,
+  onNavigateSettings,
   error,
   onDismissError,
 }) {
@@ -28,21 +31,17 @@ export default function Library({
         </Alert>
       )}
 
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 3,
-        }}
-      >
-        <Typography variant="h4">Library</Typography>
+      <Box sx={{ display: "flex", alignItems: "center", mb: 3, gap: 2 }}>
+        <Typography variant="h4" sx={{ flexShrink: 0 }}>
+          Library
+        </Typography>
+        <Box sx={{ flex: 1 }} />
         <TextField
           size="small"
           placeholder="Search games..."
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          sx={{ width: 320 }}
+          sx={{ width: 300, flexShrink: 0 }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start">
@@ -78,9 +77,25 @@ export default function Library({
           <Typography variant="h6" gutterBottom>
             No games found
           </Typography>
-          <Typography variant="body2">
-            Add ROMs to your library or sync with your RomM server.
+          <Typography variant="body2" sx={{ mb: 3 }}>
+            Scan a local ROM folder or sync from your RomM server.
           </Typography>
+          <Box sx={{ display: "flex", gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<FolderOpenIcon />}
+              onClick={onNavigateSettings}
+            >
+              Scan ROM Folder
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<CloudSyncIcon />}
+              onClick={onNavigateSettings}
+            >
+              Sync from RomM
+            </Button>
+          </Box>
         </Box>
       ) : (
         <Grid container spacing={2}>

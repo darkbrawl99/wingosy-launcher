@@ -4,11 +4,13 @@ import Sidebar from "./components/Sidebar";
 import Library from "./components/Library";
 import GameDetails from "./components/GameDetails";
 import Settings from "./components/Settings";
+import SetupWizard from "./components/SetupWizard";
 import { invoke } from "@tauri-apps/api/tauri";
 
 const DRAWER_WIDTH = 260;
 
 function App() {
+  const [showSetup, setShowSetup] = useState(null);
   const [view, setView] = useState("library");
   const [games, setGames] = useState([]);
   const [platforms, setPlatforms] = useState([]);
@@ -19,11 +21,31 @@ function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    loadData();
+    checkFirstRun();
   }, []);
 
+  async function checkFirstRun() {
+    try {
+      const firstRun = await invoke("is_first_run");
+      setShowSetup(firstRun);
+      if (!firstRun) {
+        loadData();
+      }
+    } catch {
+      setShowSetup(false);
+      loadData();
+    }
+  }
+
+  function handleSetupComplete() {
+    setShowSetup(false);
+    loadData();
+  }
+
   useEffect(() => {
-    refreshGames();
+    if (showSetup === false && !loading) {
+      refreshGames();
+    }
   }, [selectedPlatform, searchQuery]);
 
   async function loadData() {
@@ -92,11 +114,29 @@ function App() {
     setSelectedGame(null);
   }
 
-  function handleNavigate(view) {
-    setView(view);
-    if (view === "library") {
+  function handleNavigate(newView) {
+    setView(newView);
+    if (newView === "library") {
       setSelectedGame(null);
     }
+  }
+
+  if (showSetup === null) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100vh",
+          bgcolor: "background.default",
+        }}
+      />
+    );
+  }
+
+  if (showSetup) {
+    return <SetupWizard onComplete={handleSetupComplete} />;
   }
 
   return (
@@ -112,7 +152,7 @@ function App() {
       <Box
         component="main"
         sx={{
-          flexGrow: 1,
+          width: `calc(100vw - ${DRAWER_WIDTH}px)`,
           ml: `${DRAWER_WIDTH}px`,
           height: "100vh",
           overflow: "auto",
@@ -128,6 +168,7 @@ function App() {
             onSelectGame={handleSelectGame}
             onToggleFavorite={handleToggleFavorite}
             onLaunchGame={handleLaunchGame}
+            onNavigateSettings={() => handleNavigate("settings")}
             error={error}
             onDismissError={() => setError(null)}
           />
@@ -142,7 +183,12 @@ function App() {
           />
         )}
         {view === "settings" && (
-          <Settings onBack={() => handleNavigate("library")} />
+          <Settings
+            onBack={() => {
+              handleNavigate("library");
+              loadData();
+            }}
+          />
         )}
       </Box>
     </Box>

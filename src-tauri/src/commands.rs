@@ -25,6 +25,33 @@ fn get_db() -> CommandResult<Database> {
 }
 
 #[tauri::command]
+pub fn is_first_run() -> CommandResult<bool> {
+    let config_path = AppConfig::config_path().map_err(CommandError::from)?;
+    Ok(!config_path.exists())
+}
+
+#[tauri::command]
+pub fn complete_setup(
+    romm_url: Option<String>,
+    romm_username: Option<String>,
+    roms_directory: Option<String>,
+) -> CommandResult<()> {
+    let mut config = AppConfig::load().unwrap_or_default();
+
+    if let Some(url) = romm_url {
+        config.romm.server_url = Some(url);
+    }
+    if let Some(username) = romm_username {
+        config.romm.username = Some(username);
+    }
+    if let Some(dir) = roms_directory {
+        config.library.roms_directory = Some(std::path::PathBuf::from(dir));
+    }
+
+    config.save().map_err(|e| e.into())
+}
+
+#[tauri::command]
 pub fn get_all_games() -> CommandResult<Vec<Game>> {
     let db = get_db()?;
     db.get_all_games().map_err(|e| e.into())

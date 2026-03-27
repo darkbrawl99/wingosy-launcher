@@ -2,6 +2,7 @@
     all(not(debug_assertions), target_os = "windows"),
     windows_subsystem = "windows"
 )]
+#![allow(dead_code)]
 
 mod api;
 mod commands;
@@ -26,6 +27,8 @@ fn main() {
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            commands::is_first_run,
+            commands::complete_setup,
             commands::get_all_games,
             commands::get_games_filtered,
             commands::get_all_platforms,

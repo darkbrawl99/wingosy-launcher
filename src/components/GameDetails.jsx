@@ -27,7 +27,7 @@ export default function GameDetails({
     playHours > 0 ? `${playHours}h ${playMins}m` : `${playMins}m`;
 
   return (
-    <Box sx={{ p: 3, maxWidth: 900 }}>
+    <Box sx={{ p: 3, maxWidth: 900, mx: "auto" }}>
       <Button
         startIcon={<ArrowBackIcon />}
         onClick={onBack}
