@@ -1,0 +1,66 @@
+use anyhow::{Context, Result};
+use std::path::{Path, PathBuf};
+
+pub async fn download_file(url: &str, dest: &Path) -> Result<()> {
+    let dl = crate::api::download::DownloadManager::new();
+    dl.download_file(url, dest, None, |_| {}).await
+}
+
+pub fn extract_archive(archive: &Path, dest_dir: &Path, format: &str) -> Result<PathBuf> {
+    std::fs::create_dir_all(dest_dir).context("Failed to create destination directory")?;
+
+    match format {
+        "zip" => extract_zip(archive, dest_dir),
+        "7z" => extract_7z(archive, dest_dir),
+        _ => anyhow::bail!("Unsupported archive format: {}", format),
+    }
+}
+
+fn extract_zip(archive: &Path, dest_dir: &Path) -> Result<PathBuf> {
+    let file = std::fs::File::open(archive).context("Failed to open archive")?;
+    let mut zip = zip::ZipArchive::new(file).context("Failed to read zip")?;
+
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i)?;
+        let outpath = dest_dir.join(entry.mangled_name());
+
+        if entry.is_dir() {
+            std::fs::create_dir_all(&outpath).ok();
+        } else {
+            if let Some(parent) = outpath.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            let mut outfile = std::fs::File::create(&outpath)?;
+            std::io::copy(&mut entry, &mut outfile)?;
+        }
+    }
+
+    Ok(dest_dir.to_path_buf())
+}
+
+fn extract_7z(archive: &Path, dest_dir: &Path) -> Result<PathBuf> {
+    sevenz_rust::decompress_file(archive, dest_dir)
+        .context("Failed to extract 7z archive")?;
+    Ok(dest_dir.to_path_buf())
+}
+
+pub fn find_executable(dir: &Path, exe_names: &[&str]) -> Option<PathBuf> {
+    for exe in exe_names {
+        let direct = dir.join(exe);
+        if direct.exists() {
+            return Some(direct);
+        }
+
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    let nested = entry.path().join(exe);
+                    if nested.exists() {
+                        return Some(nested);
+                    }
+                }
+            }
+        }
+    }
+    None
+}

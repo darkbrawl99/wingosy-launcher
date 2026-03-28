@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::path::PathBuf;
 
 use crate::config::AppConfig;
 use crate::database::Database;
@@ -464,4 +465,273 @@ pub fn search_games(query: String) -> CommandResult<Vec<Game>> {
         ..Default::default()
     };
     db.get_games_filtered(&filter).map_err(|e| e.into())
+}
+
+#[derive(Debug, Serialize)]
+pub struct EmulatorInfo {
+    pub id: String,
+    pub name: String,
+    pub is_installed: bool,
+    pub installed_path: Option<String>,
+    pub has_download: bool,
+    pub github_repo: Option<String>,
+    pub download_url: Option<String>,
+    pub supported_platforms: Vec<String>,
+    pub is_retroarch: bool,
+}
+
+#[tauri::command]
+pub fn get_all_emulators() -> CommandResult<Vec<EmulatorInfo>> {
+    let detected = crate::emulators::detection::detect_installed_emulators();
+    let all = crate::models::default_emulators();
+
+    let result: Vec<EmulatorInfo> = all
+        .iter()
+        .map(|emu| {
+            let detected_entry = detected.iter().find(|d| d.id == emu.id);
+            let is_detected = detected_entry.is_some();
+            let detected_path = detected_entry.map(|d| d.path.to_string_lossy().to_string());
+
+            EmulatorInfo {
+                id: emu.id.clone(),
+                name: emu.name.clone(),
+                is_installed: is_detected,
+                installed_path: detected_path,
+                has_download: emu.github_repo.is_some() || emu.download_url.is_some(),
+                github_repo: emu.github_repo.clone(),
+                download_url: emu.download_url.clone(),
+                supported_platforms: emu.supported_platforms.clone(),
+                is_retroarch: emu.is_retroarch,
+            }
+        })
+        .collect();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn download_emulator(emulator_id: String) -> CommandResult<String> {
+    let emulators = crate::models::default_emulators();
+    let emu = emulators
+        .iter()
+        .find(|e| e.id == emulator_id)
+        .ok_or_else(|| CommandError {
+            message: format!("Unknown emulator: {}", emulator_id),
+        })?;
+
+    let install_dir = AppConfig::emulators_dir()
+        .map_err(CommandError::from)?
+        .join(&emulator_id);
+    std::fs::create_dir_all(&install_dir).ok();
+
+    let (download_url, archive_format) = if let Some(ref repo) = emu.github_repo {
+        let release = crate::emulators::github::fetch_latest_release(repo)
+            .await
+            .map_err(CommandError::from)?;
+
+        let pattern = emu.asset_pattern.as_deref().unwrap_or(".*");
+        let asset = crate::emulators::github::find_matching_asset(&release, pattern)
+            .ok_or_else(|| CommandError {
+                message: format!(
+                    "No matching asset found for {} in release {}",
+                    emulator_id, release.tag_name
+                ),
+            })?;
+
+        (asset.browser_download_url.clone(), emu.archive_format.clone())
+    } else if let Some(ref url) = emu.download_url {
+        (url.clone(), emu.archive_format.clone())
+    } else {
+        return Err(CommandError {
+            message: format!("No download source for {}", emulator_id),
+        });
+    };
+
+    let file_ext = archive_format.as_deref().unwrap_or("zip");
+    let archive_path = install_dir.join(format!("{}.{}", emulator_id, file_ext));
+
+    crate::emulators::installer::download_file(&download_url, &archive_path)
+        .await
+        .map_err(CommandError::from)?;
+
+    if let Some(ref fmt) = archive_format {
+        if fmt != "exe" {
+            crate::emulators::installer::extract_archive(&archive_path, &install_dir, fmt)
+                .map_err(CommandError::from)?;
+            std::fs::remove_file(&archive_path).ok();
+        }
+    }
+
+    let exe_names = get_exe_names(&emulator_id);
+    let exe_path = crate::emulators::installer::find_executable(&install_dir, &exe_names);
+
+    if let Some(ref path) = exe_path {
+        let mut config = AppConfig::load().unwrap_or_default();
+        set_emulator_path(&mut config.emulators, &emulator_id, path.clone());
+        config.save().ok();
+    }
+
+    Ok(exe_path
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| install_dir.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+pub async fn download_retroarch_core(core_name: String) -> CommandResult<String> {
+    let config = AppConfig::load().unwrap_or_default();
+    let retroarch_path = config
+        .emulators
+        .retroarch
+        .or_else(|| {
+            let detected = crate::emulators::detection::detect_installed_emulators();
+            detected
+                .iter()
+                .find(|d| d.id == "retroarch")
+                .map(|d| d.path.clone())
+        })
+        .ok_or_else(|| CommandError {
+            message: "RetroArch not found. Install RetroArch first.".into(),
+        })?;
+
+    let cores_dir = crate::emulators::cores::get_cores_dir(&retroarch_path);
+    let core_path = crate::emulators::cores::download_core(&core_name, &cores_dir)
+        .await
+        .map_err(CommandError::from)?;
+
+    Ok(core_path.to_string_lossy().to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct MissingCore {
+    pub platform_id: String,
+    pub platform_name: String,
+    pub core_filename: String,
+}
+
+#[tauri::command]
+pub fn get_missing_cores() -> CommandResult<Vec<MissingCore>> {
+    let config = AppConfig::load().unwrap_or_default();
+    let retroarch_path = config.emulators.retroarch.clone().or_else(|| {
+        let detected = crate::emulators::detection::detect_installed_emulators();
+        detected
+            .iter()
+            .find(|d| d.id == "retroarch")
+            .map(|d| d.path.clone())
+    });
+
+    let cores = crate::models::retroarch_cores();
+    let db = get_db()?;
+    let platforms_with_games = db.get_platforms_with_games().map_err(CommandError::from)?;
+
+    let mut missing = Vec::new();
+    for (platform, _count) in &platforms_with_games {
+        if let Some(core) = cores.get(&platform.id) {
+            let installed = retroarch_path
+                .as_ref()
+                .map(|p| crate::emulators::cores::is_core_installed(p, core))
+                .unwrap_or(false);
+
+            if !installed {
+                missing.push(MissingCore {
+                    platform_id: platform.id.clone(),
+                    platform_name: platform.name.clone(),
+                    core_filename: core.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(missing)
+}
+
+#[tauri::command]
+pub fn apply_detected_paths() -> CommandResult<i32> {
+    let detected = crate::emulators::detection::detect_installed_emulators();
+    let mut config = AppConfig::load().unwrap_or_default();
+    let mut count = 0;
+
+    for emu in &detected {
+        let current = get_emulator_path_from_config(&config.emulators, &emu.id);
+        if current.is_none() {
+            set_emulator_path(&mut config.emulators, &emu.id, emu.path.clone());
+            count += 1;
+        }
+    }
+
+    if count > 0 {
+        config.save().map_err(CommandError::from)?;
+    }
+
+    Ok(count)
+}
+
+fn get_exe_names(emulator_id: &str) -> Vec<&'static str> {
+    match emulator_id {
+        "retroarch" => vec!["retroarch.exe", "RetroArch.exe"],
+        "dolphin" => vec!["Dolphin.exe"],
+        "pcsx2" => vec!["pcsx2-qt.exe", "pcsx2.exe", "pcsx2-qtx64.exe"],
+        "rpcs3" => vec!["rpcs3.exe"],
+        "ppsspp" => vec!["PPSSPPWindows64.exe", "PPSSPPWindows.exe"],
+        "duckstation" => vec![
+            "duckstation-qt-x64-ReleaseLTCG.exe",
+            "duckstation-nogui-x64-ReleaseLTCG.exe",
+        ],
+        "cemu" => vec!["Cemu.exe"],
+        "ryujinx" => vec!["Ryujinx.exe"],
+        "citra" => vec!["lime3ds-gui.exe", "lime3ds.exe", "citra-qt.exe"],
+        "melonds" => vec!["melonDS.exe"],
+        "mgba" => vec!["mGBA.exe"],
+        "flycast" => vec!["flycast.exe"],
+        "xemu" => vec!["xemu.exe"],
+        "xenia" => vec!["xenia_canary.exe", "xenia.exe"],
+        "mame" => vec!["mame.exe", "mame64.exe"],
+        _ => vec![],
+    }
+}
+
+fn set_emulator_path(paths: &mut crate::config::EmulatorPaths, id: &str, path: PathBuf) {
+    match id {
+        "retroarch" => paths.retroarch = Some(path),
+        "dolphin" => paths.dolphin = Some(path),
+        "pcsx2" => paths.pcsx2 = Some(path),
+        "rpcs3" => paths.rpcs3 = Some(path),
+        "ppsspp" => paths.ppsspp = Some(path),
+        "duckstation" => paths.duckstation = Some(path),
+        "cemu" => paths.cemu = Some(path),
+        "yuzu" => paths.yuzu = Some(path),
+        "ryujinx" => paths.ryujinx = Some(path),
+        "citra" => paths.citra = Some(path),
+        "melonds" => paths.melonds = Some(path),
+        "mgba" => paths.mgba = Some(path),
+        "flycast" => paths.flycast = Some(path),
+        "xemu" => paths.xemu = Some(path),
+        "xenia" => paths.xenia = Some(path),
+        "mame" => paths.mame = Some(path),
+        _ => {}
+    }
+}
+
+fn get_emulator_path_from_config(
+    paths: &crate::config::EmulatorPaths,
+    id: &str,
+) -> Option<PathBuf> {
+    match id {
+        "retroarch" => paths.retroarch.clone(),
+        "dolphin" => paths.dolphin.clone(),
+        "pcsx2" => paths.pcsx2.clone(),
+        "rpcs3" => paths.rpcs3.clone(),
+        "ppsspp" => paths.ppsspp.clone(),
+        "duckstation" => paths.duckstation.clone(),
+        "cemu" => paths.cemu.clone(),
+        "yuzu" => paths.yuzu.clone(),
+        "ryujinx" => paths.ryujinx.clone(),
+        "citra" => paths.citra.clone(),
+        "melonds" => paths.melonds.clone(),
+        "mgba" => paths.mgba.clone(),
+        "flycast" => paths.flycast.clone(),
+        "xemu" => paths.xemu.clone(),
+        "xenia" => paths.xenia.clone(),
+        "mame" => paths.mame.clone(),
+        _ => None,
+    }
 }

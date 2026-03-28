@@ -13,6 +13,10 @@ pub struct Emulator {
     pub core_name: Option<String>,
     pub is_retroarch: bool,
     pub is_installed: bool,
+    pub github_repo: Option<String>,
+    pub asset_pattern: Option<String>,
+    pub download_url: Option<String>,
+    pub archive_format: Option<String>,
 }
 
 impl Emulator {
@@ -60,6 +64,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: true,
             is_installed: false,
+            github_repo: None,
+            asset_pattern: None,
+            download_url: Some("https://buildbot.libretro.com/stable/1.19.1/windows/x86_64/RetroArch.7z".into()),
+            archive_format: Some("7z".into()),
         },
         Emulator {
             id: "dolphin".into(),
@@ -71,6 +79,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: None,
+            asset_pattern: None,
+            download_url: Some("https://dolphin-emu.org/download/".into()),
+            archive_format: None,
         },
         Emulator {
             id: "pcsx2".into(),
@@ -82,6 +94,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("PCSX2/pcsx2".into()),
+            asset_pattern: Some("(?i)pcsx2.*windows.*x64.*\\.7z$".into()),
+            download_url: None,
+            archive_format: Some("7z".into()),
         },
         Emulator {
             id: "rpcs3".into(),
@@ -93,6 +109,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: None,
+            asset_pattern: None,
+            download_url: Some("https://rpcs3.net/latest".into()),
+            archive_format: None,
         },
         Emulator {
             id: "ppsspp".into(),
@@ -104,6 +124,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("hrydgard/ppsspp".into()),
+            asset_pattern: Some("(?i)PPSSPPWindows64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "duckstation".into(),
@@ -115,6 +139,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("stenzek/duckstation".into()),
+            asset_pattern: Some("(?i)duckstation.*windows.*x64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "cemu".into(),
@@ -126,6 +154,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("cemu-project/Cemu".into()),
+            asset_pattern: Some("(?i)cemu.*windows.*x64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "yuzu".into(),
@@ -137,6 +169,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: None,
+            asset_pattern: None,
+            download_url: None,
+            archive_format: None,
         },
         Emulator {
             id: "ryujinx".into(),
@@ -148,6 +184,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("GreemDev/Ryujinx".into()),
+            asset_pattern: Some("(?i)ryujinx.*win_x64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "citra".into(),
@@ -159,6 +199,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("Lime3DS/Lime3DS".into()),
+            asset_pattern: Some("(?i)lime3ds.*windows.*msvc.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "melonds".into(),
@@ -170,6 +214,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("melonDS-emu/melonDS".into()),
+            asset_pattern: Some("(?i)melonDS.*win_x64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "mgba".into(),
@@ -181,6 +229,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("mgba-emu/mgba".into()),
+            asset_pattern: Some("(?i)mGBA.*win64.*\\.7z$".into()),
+            download_url: None,
+            archive_format: Some("7z".into()),
         },
         Emulator {
             id: "flycast".into(),
@@ -192,6 +244,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("flyinghead/flycast".into()),
+            asset_pattern: Some("(?i)flycast.*win64.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "xemu".into(),
@@ -203,6 +259,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("xemu-project/xemu".into()),
+            asset_pattern: Some("(?i)xemu.*win.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "xenia".into(),
@@ -214,6 +274,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("xenia-canary/xenia-canary".into()),
+            asset_pattern: Some("(?i)xenia_canary.*\\.zip$".into()),
+            download_url: None,
+            archive_format: Some("zip".into()),
         },
         Emulator {
             id: "mame".into(),
@@ -225,6 +289,10 @@ pub fn default_emulators() -> Vec<Emulator> {
             core_name: None,
             is_retroarch: false,
             is_installed: false,
+            github_repo: Some("mamedev/mame".into()),
+            asset_pattern: Some("(?i)mame.*64bit.*\\.exe$".into()),
+            download_url: None,
+            archive_format: Some("exe".into()),
         },
     ]
 }

@@ -50,6 +50,11 @@ fn main() {
             commands::get_game_details,
             commands::get_collections,
             commands::search_games,
+            commands::get_all_emulators,
+            commands::download_emulator,
+            commands::download_retroarch_core,
+            commands::get_missing_cores,
+            commands::apply_detected_paths,
         ])
         .setup(|_app| {
             let db = database::Database::open()

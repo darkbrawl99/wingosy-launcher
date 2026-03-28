@@ -81,6 +81,10 @@ impl AppConfig {
         Ok(Self::data_dir()?.join("downloads"))
     }
 
+    pub fn emulators_dir() -> Result<PathBuf> {
+        Ok(Self::data_dir()?.join("emulators"))
+    }
+
     pub fn roms_dir(&self) -> PathBuf {
         self.library.roms_directory.clone().unwrap_or_else(|| {
             Self::data_dir()
