@@ -42,7 +42,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
 import normalizeUrl from "../utils/normalizeUrl";
 
-export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRommConnect }) {
+export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRommConnect, onLibraryChange }) {
   const [config, setConfig] = useState(null);
   const [rommUrl, setRommUrl] = useState(rommUrlProp || "");
   const [rommUsername, setRommUsername] = useState("");
@@ -62,6 +62,9 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   const [hiddenGames, setHiddenGames] = useState([]);
   const [hiddenDialogOpen, setHiddenDialogOpen] = useState(false);
   const [hiddenLoading, setHiddenLoading] = useState(false);
+  
+  // Library directory state
+  const [romsDirectory, setRomsDirectory] = useState("");
 
   useEffect(() => {
     loadConfig();
@@ -75,6 +78,7 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       setConfig(cfg);
       setRommUrl(cfg.romm?.server_url || rommUrlProp || "");
       setRommUsername(cfg.romm?.username || "");
+      setRomsDirectory(cfg.library?.roms_directory || "");
     } catch {}
   }
 
@@ -133,6 +137,10 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
         serverUrl: normalizedUrl, token: rommToken || "re-auth",
       });
       setRommStatus({ type: "success", message: `Synced ${games.length} games from RomM!` });
+      // Refresh sidebar platform counts
+      if (onLibraryChange) {
+        onLibraryChange();
+      }
     } catch (err) {
       setRommStatus({ type: "error", message: err.message || String(err) });
     }
@@ -140,11 +148,48 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
 
   async function handleScanDirectory() {
     try {
+      // If ROM directory is set, scan that. Otherwise, ask user to pick a folder.
+      let pathToScan = romsDirectory;
+      if (!pathToScan) {
+        const selected = await open({ directory: true, multiple: false });
+        if (!selected) return;
+        pathToScan = selected;
+      }
+      
+      setScanMessage({ type: "info", message: `Scanning ${pathToScan}...` });
+      const games = await invoke("scan_directory", { path: pathToScan, recursive: true });
+      setScanMessage({ type: "success", message: `Found ${games.length} games!` });
+      if (onLibraryChange) onLibraryChange();
+    } catch (err) {
+      setScanMessage({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handleScanCustomDirectory() {
+    try {
       const selected = await open({ directory: true, multiple: false });
       if (selected) {
-        setScanMessage({ type: "info", message: "Scanning..." });
+        setScanMessage({ type: "info", message: `Scanning ${selected}...` });
         const games = await invoke("scan_directory", { path: selected, recursive: true });
         setScanMessage({ type: "success", message: `Found ${games.length} games!` });
+        if (onLibraryChange) onLibraryChange();
+      }
+    } catch (err) {
+      setScanMessage({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handleChangeRomsDirectory() {
+    try {
+      const selected = await open({ directory: true, multiple: false });
+      if (selected) {
+        // Update config with new directory
+        const cfg = await invoke("get_config");
+        cfg.library = cfg.library || {};
+        cfg.library.roms_directory = selected;
+        await invoke("save_config", { config: cfg });
+        setRomsDirectory(selected);
+        setScanMessage({ type: "success", message: `ROM directory set to: ${selected}` });
       }
     } catch (err) {
       setScanMessage({ type: "error", message: err.message || String(err) });
@@ -297,10 +342,53 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
           <FolderIcon color="primary" />
           <Typography variant="h6">Library</Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Select a folder containing your ROM files to scan.
+        
+        {/* Current ROM Directory */}
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+          ROM Storage Directory
         </Typography>
-        <Button variant="outlined" onClick={handleScanDirectory}>Scan ROM Directory</Button>
+        <Box sx={{ 
+          display: "flex", 
+          alignItems: "center", 
+          gap: 2, 
+          mb: 2,
+          p: 1.5,
+          bgcolor: "rgba(0,0,0,0.2)",
+          borderRadius: 2,
+        }}>
+          <FolderOpenIcon color="action" />
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              flex: 1, 
+              fontFamily: "monospace",
+              color: romsDirectory ? "text.primary" : "text.secondary",
+              fontStyle: romsDirectory ? "normal" : "italic",
+            }}
+          >
+            {romsDirectory || "Not set (using default location)"}
+          </Typography>
+          <Button size="small" variant="outlined" onClick={handleChangeRomsDirectory}>
+            Change
+          </Button>
+        </Box>
+        
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Scan for ROMs to add them to your library.
+        </Typography>
+        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
+          <Button 
+            variant="contained" 
+            onClick={handleScanDirectory}
+            disabled={!romsDirectory}
+            title={romsDirectory ? `Scan ${romsDirectory}` : "Set a ROM directory first"}
+          >
+            Scan ROM Directory
+          </Button>
+          <Button variant="outlined" onClick={handleScanCustomDirectory}>
+            Scan Other Folder...
+          </Button>
+        </Box>
         {scanMessage && <Alert severity={scanMessage.type} sx={{ mt: 2 }}>{scanMessage.message}</Alert>}
       </Paper>
 

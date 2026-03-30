@@ -244,6 +244,7 @@ function App() {
             rommToken={rommToken}
             rommUrl={rommUrl}
             onRommConnect={handleRommConnect}
+            onLibraryChange={loadData}
           />
         )}
       </Box>

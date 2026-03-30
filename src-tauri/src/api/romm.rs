@@ -13,6 +13,7 @@ impl RomMClient {
     pub fn new(base_url: impl Into<String>) -> Self {
         let client = Client::builder()
             .cookie_store(true)
+            .timeout(std::time::Duration::from_secs(120)) // 2 minute timeout for slow servers
             .build()
             .unwrap_or_else(|_| Client::new());
 

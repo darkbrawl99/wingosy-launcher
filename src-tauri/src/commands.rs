@@ -65,17 +65,38 @@ fn validate_game_paths(games: Vec<Game>, db: &Database) -> Vec<Game> {
         
         // Check if local file path exists
         if let Some(ref local_path) = game.local_file_path {
-            let path = std::path::Path::new(local_path);
-            if path.exists() {
+            // Normalize the path for Windows (handle forward/back slashes)
+            let normalized_path = std::path::PathBuf::from(local_path);
+            let path_exists = normalized_path.exists() || {
+                // Also try canonicalizing the path
+                normalized_path.canonicalize().map(|p| p.exists()).unwrap_or(false)
+            };
+            
+            if path_exists {
                 // File exists - mark as synced if it was remote_only
                 if game.sync_state == crate::models::SyncState::RemoteOnly {
                     game.sync_state = crate::models::SyncState::Synced;
+                    tracing::debug!("[Validation] Game {} file exists, marking as synced", game.name);
                 }
             } else {
+                tracing::debug!("[Validation] Game {} file not found at: {:?}", game.name, normalized_path);
                 // File doesn't exist - mark as remote only if from RomM
+                // But only reset if it's been a while (file might be temporarily unavailable)
                 if game.romm_id.is_some() {
-                    game.sync_state = crate::models::SyncState::RemoteOnly;
-                    game.local_file_path = None;
+                    // Try to discover the file in case it was moved
+                    if let Some(ref cfg) = config {
+                        if let Some(discovered_path) = discover_rom_file(&game, cfg) {
+                            tracing::info!("[Validation] Re-discovered ROM at: {}", discovered_path);
+                            game.local_file_path = Some(discovered_path);
+                            game.sync_state = crate::models::SyncState::Synced;
+                        } else {
+                            game.sync_state = crate::models::SyncState::RemoteOnly;
+                            game.local_file_path = None;
+                        }
+                    } else {
+                        game.sync_state = crate::models::SyncState::RemoteOnly;
+                        game.local_file_path = None;
+                    }
                 }
             }
         } else if game.romm_id.is_some() {
@@ -92,6 +113,7 @@ fn validate_game_paths(games: Vec<Game>, db: &Database) -> Vec<Game> {
         
         // Persist changes if state or path changed
         if game.sync_state != original_state || game.local_file_path != original_path {
+            tracing::debug!("[Validation] Game {} state changed: {:?} -> {:?}", game.name, original_state, game.sync_state);
             if let Err(e) = db.update_game(&game) {
                 tracing::warn!("[Library] Failed to update game {}: {}", game.id, e);
             }
@@ -380,14 +402,12 @@ pub async fn sync_romm_library(
         e.to_string()
     })?;
     
-    tracing::info!("[RomM] Syncing {} platforms", romm_platforms.len());
-    let mut all_games = Vec::new();
+    tracing::info!("[RomM] Found {} platforms", romm_platforms.len());
     
+    // Update platform info (logos, names)
     for romm_platform in &romm_platforms {
-        // Map RomM platform to our internal platform with logo
         let platform_id = map_romm_slug(&romm_platform.slug);
         
-        // Build full logo URL if available
         let logo_url = romm_platform.url_logo.as_ref().map(|logo| {
             if logo.starts_with("http") {
                 logo.clone()
@@ -396,11 +416,6 @@ pub async fn sync_romm_library(
             }
         });
         
-        if let Some(ref url) = logo_url {
-            tracing::debug!("[RomM] Platform {} logo: {}", platform_id, url);
-        }
-        
-        // Update platform with logo URL
         let platform = Platform {
             id: platform_id.clone(),
             name: romm_platform.display_name.clone().unwrap_or_else(|| romm_platform.name.clone()),
@@ -410,23 +425,81 @@ pub async fn sync_romm_library(
             sort_order: 0,
         };
         
-        // Insert/update platform in database
         if let Err(e) = db.insert_platform(&platform) {
             tracing::warn!("[RomM] Failed to update platform {}: {}", platform_id, e);
         }
+    }
+    
+    // Fetch ALL ROMs at once (no platform filter) to avoid duplicates
+    tracing::info!("[RomM] Fetching all ROMs...");
+    let mut all_games = Vec::new();
+    let mut offset = 0;
+    let limit = 1000; // Fetch in large batches
+    
+    loop {
+        // Retry logic for unreliable connections
+        let mut retries = 3;
+        let response = loop {
+            match client.get_roms(None, limit, offset).await {
+                Ok(r) => break r,
+                Err(e) => {
+                    retries -= 1;
+                    if retries == 0 {
+                        tracing::error!("[RomM] Failed to fetch ROMs after retries: {}", e);
+                        return Err(e.to_string());
+                    }
+                    tracing::warn!("[RomM] Retry {} - fetch failed: {}", 3 - retries, e);
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+            }
+        };
         
-        tracing::debug!("[RomM] Syncing platform: {} (id={})", romm_platform.name, romm_platform.id);
-        let response = client.get_roms(Some(romm_platform.id), 1000, 0).await
-            .map_err(|e| e.to_string())?;
+        let fetched_count = response.items.len();
+        tracing::info!("[RomM] Fetched {} ROMs (offset={}, total={})", 
+            fetched_count, offset, response.total);
         
         for rom in response.items {
             let game = rom.into_game(&server_url);
             db.upsert_game(&game).map_err(|e| e.to_string())?;
             all_games.push(game);
         }
+        
+        // Check if we've fetched all ROMs
+        if fetched_count < limit as usize || all_games.len() >= response.total as usize {
+            break;
+        }
+        
+        offset += limit;
     }
     
-    tracing::info!("[RomM] Library sync complete: {} games imported", all_games.len());
+    // Remove games that no longer exist on RomM server
+    let synced_romm_ids: std::collections::HashSet<i32> = all_games
+        .iter()
+        .filter_map(|g| g.romm_id)
+        .collect();
+    
+    let existing_games = db.get_all_games().map_err(|e| e.to_string())?;
+    let mut removed_count = 0;
+    
+    for game in existing_games {
+        if let Some(romm_id) = game.romm_id {
+            if !synced_romm_ids.contains(&romm_id) {
+                // Game exists locally but not on RomM server anymore
+                tracing::info!("[RomM] Removing game no longer on server: {} (romm_id={})", game.name, romm_id);
+                if let Err(e) = db.delete_game(game.id) {
+                    tracing::warn!("[RomM] Failed to delete game {}: {}", game.id, e);
+                } else {
+                    removed_count += 1;
+                }
+            }
+        }
+    }
+    
+    if removed_count > 0 {
+        tracing::info!("[RomM] Removed {} games no longer on server", removed_count);
+    }
+    
+    tracing::info!("[RomM] Library sync complete: {} games synced", all_games.len());
     Ok(all_games)
 }
 
