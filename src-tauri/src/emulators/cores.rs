@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 const BUILDBOT_BASE: &str = "https://buildbot.libretro.com/nightly/windows/x86_64/latest";
 
 pub fn core_download_url(core_filename: &str) -> String {
+    // The buildbot uses .dll.zip extension for Windows cores
+    // Core filename is like "mgba_libretro.dll", URL is "mgba_libretro.dll.zip"
     format!("{}/{}.zip", BUILDBOT_BASE, core_filename)
 }
 

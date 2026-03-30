@@ -35,6 +35,12 @@ impl DownloadManager {
 
         let response = request.send().await.context("Failed to start download")?;
 
+        // Check for HTTP errors
+        let status = response.status();
+        if !status.is_success() {
+            anyhow::bail!("HTTP error {}: {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown"));
+        }
+
         let total_size = response.content_length();
 
         if let Some(parent) = dest_path.parent() {

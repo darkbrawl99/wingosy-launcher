@@ -589,7 +589,7 @@ pub async fn download_emulator(emulator_id: String) -> Result<String, String> {
         "ppsspp" => vec!["PPSSPPWindows64.exe", "PPSSPPWindows.exe"],
         "duckstation" => vec!["duckstation-qt-x64-ReleaseLTCG.exe", "duckstation-nogui-x64-ReleaseLTCG.exe"],
         "cemu" => vec!["Cemu.exe"],
-        "ryujinx" => vec!["Ryujinx.exe"],
+        "eden" => vec!["eden.exe", "Eden.exe"],
         "citra" => vec!["lime3ds.exe", "citra-qt.exe"],
         "melonds" => vec!["melonDS.exe"],
         "mgba" => vec!["mGBA.exe"],
@@ -619,8 +619,7 @@ pub async fn download_emulator(emulator_id: String) -> Result<String, String> {
         "ppsspp" => config.emulators.ppsspp = Some(exe_path.clone()),
         "duckstation" => config.emulators.duckstation = Some(exe_path.clone()),
         "cemu" => config.emulators.cemu = Some(exe_path.clone()),
-        "yuzu" => config.emulators.yuzu = Some(exe_path.clone()),
-        "ryujinx" => config.emulators.ryujinx = Some(exe_path.clone()),
+        "eden" => config.emulators.eden = Some(exe_path.clone()),
         "citra" => config.emulators.citra = Some(exe_path.clone()),
         "melonds" => config.emulators.melonds = Some(exe_path.clone()),
         "mgba" => config.emulators.mgba = Some(exe_path.clone()),
@@ -736,12 +735,8 @@ pub async fn apply_detected_paths() -> Result<i32, String> {
                 config.emulators.cemu = path;
                 true
             }
-            "yuzu" if config.emulators.yuzu.is_none() => {
-                config.emulators.yuzu = path;
-                true
-            }
-            "ryujinx" if config.emulators.ryujinx.is_none() => {
-                config.emulators.ryujinx = path;
+            "eden" if config.emulators.eden.is_none() => {
+                config.emulators.eden = path;
                 true
             }
             "citra" if config.emulators.citra.is_none() => {

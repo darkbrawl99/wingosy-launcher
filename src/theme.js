@@ -4,29 +4,29 @@ const theme = createTheme({
   palette: {
     mode: "dark",
     primary: {
-      main: "#4a90e2",
-      light: "#5a9ee8",
-      dark: "#3a7bd4",
+      main: "#6366f1",
+      light: "#818cf8",
+      dark: "#4f46e5",
     },
     secondary: {
-      main: "#8c5cc5",
+      main: "#8b5cf6",
     },
     background: {
-      default: "#14141a",
-      paper: "#1e1e26",
+      default: "#0f0f14",
+      paper: "#18181f",
     },
     success: {
-      main: "#4cc06a",
+      main: "#22c55e",
     },
     warning: {
-      main: "#f0c040",
+      main: "#f59e0b",
     },
     error: {
-      main: "#e55a5a",
+      main: "#ef4444",
     },
     text: {
-      primary: "#f0f0f0",
-      secondary: "#b0b0b8",
+      primary: "#f1f5f9",
+      secondary: "#94a3b8",
     },
   },
   typography: {
@@ -39,6 +39,32 @@ const theme = createTheme({
     borderRadius: 12,
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        body: {
+          scrollbarColor: "#3f3f46 transparent",
+          "&::-webkit-scrollbar, & *::-webkit-scrollbar": {
+            width: 8,
+            height: 8,
+          },
+          "&::-webkit-scrollbar-track, & *::-webkit-scrollbar-track": {
+            background: "transparent",
+          },
+          "&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb": {
+            backgroundColor: "#3f3f46",
+            borderRadius: 4,
+            border: "2px solid transparent",
+            backgroundClip: "content-box",
+          },
+          "&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover": {
+            backgroundColor: "#52525b",
+          },
+          "&::-webkit-scrollbar-corner, & *::-webkit-scrollbar-corner": {
+            background: "transparent",
+          },
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
@@ -58,7 +84,7 @@ const theme = createTheme({
       styleOverrides: {
         paper: {
           backgroundImage: "none",
-          backgroundColor: "#1a1a22",
+          backgroundColor: "#131318",
         },
       },
     },

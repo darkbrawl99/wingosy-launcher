@@ -388,7 +388,7 @@ fn get_emulator_patterns() -> Vec<(&'static str, &'static str, &'static [&'stati
             ][..],
         ),
         ("cemu", "Cemu", &["Cemu.exe"][..]),
-        ("ryujinx", "Ryujinx", &["Ryujinx.exe", "Ryujinx.Ava.exe"][..]),
+        ("eden", "Eden", &["eden.exe", "Eden.exe"][..]),
         ("citra", "Citra", &["citra-qt.exe", "lime3ds.exe"][..]),
         ("melonds", "melonDS", &["melonDS.exe"][..]),
         ("mgba", "mGBA", &["mGBA.exe", "mgba.exe"][..]),
