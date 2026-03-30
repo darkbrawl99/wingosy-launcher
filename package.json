@@ -15,9 +15,13 @@
     "test:e2e:sensing": "wdio run wdio.conf.js --spec e2e-webdriver/emulator-sensing.spec.js",
     "test:e2e:download": "wdio run wdio.conf.js --spec e2e-webdriver/emulator-download.spec.js",
     "test:e2e:cores": "wdio run wdio.conf.js --spec e2e-webdriver/retroarch-cores.spec.js",
+    "test:e2e:roms": "wdio run wdio.conf.js --spec e2e-webdriver/rom-download.spec.js",
     "test:e2e:games": "wdio run wdio.conf.js --spec e2e-webdriver/game-launch.spec.js",
     "test:e2e:gba": "wdio run wdio.conf.js --spec e2e-webdriver/game-launch-gba.spec.js",
-    "test:e2e:coverage": "wdio run wdio.conf.js --spec e2e-webdriver/coverage-analysis.spec.js"
+    "test:e2e:coverage": "wdio run wdio.conf.js --spec e2e-webdriver/coverage-analysis.spec.js",
+    "test:rust": "cd src-tauri && cargo test -- --nocapture",
+    "test:rust:unit": "cd src-tauri && cargo test --bin wingosy-launcher -- --nocapture",
+    "test:rust:critical": "cd src-tauri && cargo test critical -- --nocapture"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -37,6 +41,7 @@
     "@wdio/local-runner": "^9.27.0",
     "@wdio/mocha-framework": "^9.27.0",
     "@wdio/spec-reporter": "^9.27.0",
+    "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
     "vite": "^5.4.0"
   }

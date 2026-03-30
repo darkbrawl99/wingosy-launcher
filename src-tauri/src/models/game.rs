@@ -169,4 +169,98 @@ mod tests {
         game.play_time_minutes = 45;
         assert_eq!(game.formatted_play_time(), "45m");
     }
+
+    #[test]
+    fn formatted_play_time_zero() {
+        let game = Game::new("Test".into(), "test.rom".into(), "snes".into());
+        assert_eq!(game.formatted_play_time(), "0m");
+    }
+
+    #[test]
+    fn formatted_play_time_exact_hours() {
+        let mut game = Game::new("Test".into(), "test.rom".into(), "snes".into());
+        game.play_time_minutes = 120;
+        assert_eq!(game.formatted_play_time(), "2h 0m");
+    }
+
+    #[test]
+    fn game_new_sets_defaults() {
+        let game = Game::new("Super Mario".into(), "mario.sfc".into(), "snes".into());
+        
+        assert_eq!(game.id, 0);
+        assert_eq!(game.name, "Super Mario");
+        assert_eq!(game.file_path, "mario.sfc");
+        assert_eq!(game.platform_id, "snes");
+        assert_eq!(game.source, GameSource::Local);
+        assert!(!game.is_favorite);
+        assert!(!game.is_hidden);
+        assert_eq!(game.play_count, 0);
+        assert_eq!(game.play_time_minutes, 0);
+        assert!(game.genres.is_empty());
+        assert!(game.screenshot_paths.is_empty());
+    }
+
+    #[test]
+    fn game_source_display() {
+        assert_eq!(format!("{}", GameSource::Local), "Local");
+        assert_eq!(format!("{}", GameSource::RomM), "RomM");
+    }
+
+    #[test]
+    fn game_source_db_str() {
+        assert_eq!(GameSource::Local.to_db_str(), "local");
+        assert_eq!(GameSource::RomM.to_db_str(), "romm");
+    }
+
+    #[test]
+    fn game_filter_default() {
+        let filter = GameFilter::default();
+        
+        assert!(filter.platform_id.is_none());
+        assert!(filter.genre.is_none());
+        assert!(!filter.favorites_only);
+        assert!(filter.search_query.is_none());
+        assert_eq!(filter.sort_by, GameSort::Name);
+        assert!(!filter.sort_descending);
+    }
+
+    #[test]
+    fn game_sort_equality() {
+        assert_eq!(GameSort::Name, GameSort::Name);
+        assert_ne!(GameSort::Name, GameSort::LastPlayed);
+        assert_ne!(GameSort::PlayCount, GameSort::PlayTime);
+    }
+
+    #[test]
+    fn game_clone() {
+        let game = Game::new("Test".into(), "test.rom".into(), "gba".into());
+        let cloned = game.clone();
+        
+        assert_eq!(game.name, cloned.name);
+        assert_eq!(game.file_path, cloned.file_path);
+        assert_eq!(game.platform_id, cloned.platform_id);
+    }
+
+    #[test]
+    fn game_with_metadata() {
+        let mut game = Game::new("Final Fantasy".into(), "ff.iso".into(), "psx".into());
+        game.summary = Some("An RPG game".into());
+        game.developer = Some("Square".into());
+        game.publisher = Some("Sony".into());
+        game.release_year = Some(1997);
+        game.genres = vec!["RPG".into(), "Adventure".into()];
+        game.player_count = Some("1".into());
+        
+        assert_eq!(game.summary, Some("An RPG game".into()));
+        assert_eq!(game.developer, Some("Square".into()));
+        assert_eq!(game.release_year, Some(1997));
+        assert_eq!(game.genres.len(), 2);
+    }
+
+    #[test]
+    fn game_source_copy() {
+        let source = GameSource::Local;
+        let copied = source;
+        assert_eq!(source, copied);
+    }
 }

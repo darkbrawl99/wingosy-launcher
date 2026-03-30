@@ -173,13 +173,39 @@ impl RomMClient {
         }
 
         let response = request.send().await.context("Failed to fetch ROM")?;
-
-        let rom: RomMRom = response
-            .json()
-            .await
-            .context("Failed to parse ROM response")?;
         
-        tracing::debug!("[RomM] Fetched ROM: {}", rom.name);
+        let status = response.status();
+        let text = response.text().await.context("Failed to read ROM response")?;
+        
+        if !status.is_success() {
+            tracing::error!("[RomM] ROM API returned {}: {}", status, &text[..text.len().min(200)]);
+            anyhow::bail!("ROM API returned {}", status);
+        }
+        
+        // Parse with flexible field handling
+        let raw: serde_json::Value = serde_json::from_str(&text)
+            .context(format!("ROM response is not valid JSON: {}", &text[..text.len().min(100)]))?;
+        
+        let rom = RomMRom {
+            id: raw["id"].as_i64().context("ROM missing 'id' field")? as i32,
+            platform_id: raw["platform_id"].as_i64().unwrap_or(0) as i32,
+            platform_slug: raw["platform_slug"].as_str().unwrap_or("").to_string(),
+            name: raw["name"].as_str().unwrap_or("").to_string(),
+            fs_name: raw["fs_name"].as_str()
+                .or_else(|| raw["file_name"].as_str())
+                .unwrap_or("").to_string(),
+            fs_size_bytes: raw["fs_size_bytes"].as_i64()
+                .or_else(|| raw["file_size_bytes"].as_i64())
+                .unwrap_or(0),
+            igdb_id: raw["igdb_id"].as_i64().map(|x| x as i32),
+            summary: raw["summary"].as_str().map(|s| s.to_string()),
+            url_cover: raw["url_cover"].as_str().map(|s| s.to_string()),
+            igdb_metadata: raw.get("igdb_metadata")
+                .filter(|m| m.is_object() && !m.as_object().unwrap().is_empty())
+                .and_then(|m| serde_json::from_value(m.clone()).ok()),
+        };
+        
+        tracing::debug!("[RomM] Fetched ROM: {} (fs_name={})", rom.name, rom.fs_name);
         Ok(rom)
     }
 
@@ -195,6 +221,8 @@ impl RomMClient {
     }
 
     pub async fn get_saves(&self, rom_id: i32) -> Result<Vec<RomMSave>> {
+        tracing::debug!("[RomM] Fetching saves for ROM id={}", rom_id);
+        
         let mut request = self
             .client
             .get(format!("{}/api/roms/{}/saves", self.base_url, rom_id));
@@ -204,11 +232,68 @@ impl RomMClient {
         }
 
         let response = request.send().await.context("Failed to fetch saves")?;
-
-        response
-            .json()
-            .await
-            .context("Failed to parse saves response")
+        
+        let status = response.status();
+        let text = response.text().await.context("Failed to read saves response")?;
+        
+        if !status.is_success() {
+            // 404 means saves feature might not be enabled or no saves exist
+            if status.as_u16() == 404 {
+                tracing::debug!("[RomM] Saves not available for ROM id={} (404)", rom_id);
+                return Ok(vec![]);
+            }
+            tracing::error!("[RomM] Saves API returned {}: {}", status, &text[..text.len().min(200)]);
+            anyhow::bail!("Saves API returned {}", status);
+        }
+        
+        // Handle empty response (no saves)
+        if text.is_empty() || text == "[]" || text == "null" {
+            tracing::debug!("[RomM] No saves found for ROM id={}", rom_id);
+            return Ok(vec![]);
+        }
+        
+        // Try to parse as array first
+        let raw: serde_json::Value = serde_json::from_str(&text)
+            .context(format!("Saves response is not valid JSON: {}", &text[..text.len().min(100)]))?;
+        
+        // Handle both array and object with items field
+        let saves_array = if raw.is_array() {
+            raw.as_array().cloned().unwrap_or_default()
+        } else if let Some(items) = raw.get("items").and_then(|v| v.as_array()) {
+            items.clone()
+        } else if let Some(saves) = raw.get("saves").and_then(|v| v.as_array()) {
+            saves.clone()
+        } else {
+            tracing::warn!("[RomM] Unexpected saves response format: {}", &text[..text.len().min(200)]);
+            return Ok(vec![]);
+        };
+        
+        let saves: Vec<RomMSave> = saves_array.iter().filter_map(|v| {
+            Some(RomMSave {
+                id: v["id"].as_i64()? as i32,
+                rom_id: v["rom_id"].as_i64().unwrap_or(rom_id as i64) as i32,
+                file_name: v["file_name"].as_str()
+                    .or_else(|| v["filename"].as_str())
+                    .or_else(|| v["name"].as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                file_size_bytes: v["file_size_bytes"].as_i64()
+                    .or_else(|| v["size"].as_i64())
+                    .unwrap_or(0),
+                emulator: v["emulator"].as_str().map(|s| s.to_string()),
+                created_at: v["created_at"].as_str()
+                    .or_else(|| v["createdAt"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                updated_at: v["updated_at"].as_str()
+                    .or_else(|| v["updatedAt"].as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
+        }).collect();
+        
+        tracing::info!("[RomM] Found {} saves for ROM id={}", saves.len(), rom_id);
+        Ok(saves)
     }
 
     pub async fn upload_save(&self, rom_id: i32, save_data: Vec<u8>, filename: &str) -> Result<()> {
@@ -413,10 +498,357 @@ impl RomMRom {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RomMSave {
     pub id: i32,
+    #[serde(default)]
     pub rom_id: i32,
+    #[serde(default, alias = "filename", alias = "name")]
     pub file_name: String,
+    #[serde(default, alias = "size")]
     pub file_size_bytes: i64,
+    #[serde(default)]
     pub emulator: Option<String>,
+    #[serde(default, alias = "createdAt")]
     pub created_at: String,
+    #[serde(default, alias = "updatedAt")]
     pub updated_at: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn client_new_trims_trailing_slash() {
+        let client = RomMClient::new("https://romm.example.com/");
+        assert_eq!(client.base_url, "https://romm.example.com");
+    }
+
+    #[test]
+    fn client_new_preserves_url_without_slash() {
+        let client = RomMClient::new("https://romm.example.com");
+        assert_eq!(client.base_url, "https://romm.example.com");
+    }
+
+    #[test]
+    fn client_starts_unauthenticated() {
+        let client = RomMClient::new("https://romm.example.com");
+        assert!(!client.is_authenticated());
+        assert!(client.token().is_none());
+    }
+
+    #[test]
+    fn client_with_token_is_authenticated() {
+        let client = RomMClient::new("https://romm.example.com")
+            .with_token("test_token".into());
+        assert!(client.is_authenticated());
+        assert_eq!(client.token(), Some("test_token"));
+    }
+
+    #[test]
+    fn rom_download_url_format() {
+        let client = RomMClient::new("https://romm.example.com");
+        let url = client.rom_download_url(123, "Super Mario Bros.nes");
+        assert_eq!(url, "https://romm.example.com/api/roms/123/content/Super Mario Bros.nes");
+    }
+
+    #[test]
+    fn cover_url_format() {
+        let client = RomMClient::new("https://romm.example.com");
+        let url = client.cover_url(456);
+        assert_eq!(url, "https://romm.example.com/api/roms/456/cover");
+    }
+
+    #[test]
+    fn rom_has_cover_when_url_present() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: Some("https://example.com/cover.jpg".into()),
+            igdb_metadata: None,
+        };
+        assert!(rom.has_cover());
+    }
+
+    #[test]
+    fn rom_no_cover_when_url_none() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        assert!(!rom.has_cover());
+    }
+
+    #[test]
+    fn rom_genres_empty_without_metadata() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        assert!(rom.genres().is_empty());
+    }
+
+    #[test]
+    fn rom_genres_from_metadata() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: Some(IgdbMetadata {
+                genres: Some(vec!["RPG".into(), "Action".into()]),
+                first_release_date: None,
+                aggregated_rating: None,
+                total_rating: None,
+                franchises: None,
+                companies: None,
+            }),
+        };
+        let genres = rom.genres();
+        assert_eq!(genres.len(), 2);
+        assert!(genres.contains(&"RPG".to_string()));
+    }
+
+    #[test]
+    fn rom_rating_prefers_aggregated() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: Some(IgdbMetadata {
+                genres: None,
+                first_release_date: None,
+                aggregated_rating: Some(85.5),
+                total_rating: Some(90.0),
+                franchises: None,
+                companies: None,
+            }),
+        };
+        assert_eq!(rom.aggregated_rating(), Some(85.5));
+    }
+
+    #[test]
+    fn rom_rating_falls_back_to_total() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: Some(IgdbMetadata {
+                genres: None,
+                first_release_date: None,
+                aggregated_rating: None,
+                total_rating: Some(75.0),
+                franchises: None,
+                companies: None,
+            }),
+        };
+        assert_eq!(rom.aggregated_rating(), Some(75.0));
+    }
+
+    #[test]
+    fn rom_into_game_maps_platform_slug() {
+        let rom = RomMRom {
+            id: 42,
+            platform_id: 1,
+            platform_slug: "sega-genesis".into(),
+            name: "Sonic".into(),
+            fs_name: "sonic.md".into(),
+            fs_size_bytes: 2048,
+            igdb_id: None,
+            summary: Some("Fast hedgehog".into()),
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com");
+        
+        assert_eq!(game.platform_id, "genesis"); // mapped from sega-genesis
+        assert_eq!(game.name, "Sonic");
+        assert_eq!(game.romm_id, Some(42));
+        assert_eq!(game.summary, Some("Fast hedgehog".into()));
+        assert_eq!(game.sync_state, crate::models::SyncState::RemoteOnly);
+    }
+
+    #[test]
+    fn rom_into_game_uses_name_when_fs_name_empty() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Game Name".into(),
+            fs_name: "".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com");
+        assert_eq!(game.file_path, "Game Name");
+    }
+
+    #[test]
+    fn rom_into_game_prepends_server_url_to_relative_cover() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: Some("/media/covers/test.jpg".into()),
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com/");
+        assert_eq!(game.cover_path, Some("https://romm.example.com/media/covers/test.jpg".into()));
+    }
+
+    #[test]
+    fn rom_into_game_preserves_absolute_cover_url() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: Some("https://cdn.example.com/cover.jpg".into()),
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com");
+        assert_eq!(game.cover_path, Some("https://cdn.example.com/cover.jpg".into()));
+    }
+
+    // RomMSave deserialization tests
+    #[test]
+    fn save_deserializes_with_standard_fields() {
+        let json = r#"{
+            "id": 1,
+            "rom_id": 42,
+            "file_name": "save.sav",
+            "file_size_bytes": 8192,
+            "emulator": "retroarch",
+            "created_at": "2024-01-01",
+            "updated_at": "2024-01-02"
+        }"#;
+        
+        let save: RomMSave = serde_json::from_str(json).expect("Should parse");
+        assert_eq!(save.id, 1);
+        assert_eq!(save.rom_id, 42);
+        assert_eq!(save.file_name, "save.sav");
+        assert_eq!(save.file_size_bytes, 8192);
+        assert_eq!(save.emulator, Some("retroarch".into()));
+    }
+
+    #[test]
+    fn save_deserializes_with_alias_fields() {
+        let json = r#"{
+            "id": 1,
+            "filename": "save.sav",
+            "size": 4096,
+            "createdAt": "2024-01-01",
+            "updatedAt": "2024-01-02"
+        }"#;
+        
+        let save: RomMSave = serde_json::from_str(json).expect("Should parse with aliases");
+        assert_eq!(save.id, 1);
+        assert_eq!(save.file_name, "save.sav");
+        assert_eq!(save.file_size_bytes, 4096);
+    }
+
+    #[test]
+    fn save_deserializes_with_minimal_fields() {
+        let json = r#"{"id": 1}"#;
+        
+        let save: RomMSave = serde_json::from_str(json).expect("Should parse minimal");
+        assert_eq!(save.id, 1);
+        assert_eq!(save.rom_id, 0); // default
+        assert_eq!(save.file_name, ""); // default
+        assert_eq!(save.file_size_bytes, 0); // default
+    }
+
+    // ROM into Game sync state tests
+    #[test]
+    fn rom_into_game_sets_remote_only_sync_state() {
+        let rom = RomMRom {
+            id: 1,
+            platform_id: 1,
+            platform_slug: "snes".into(),
+            name: "Test".into(),
+            fs_name: "test.sfc".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com");
+        assert_eq!(game.sync_state, crate::models::SyncState::RemoteOnly);
+        assert!(game.local_file_path.is_none());
+    }
+
+    #[test]
+    fn rom_into_game_sets_romm_source() {
+        let rom = RomMRom {
+            id: 123,
+            platform_id: 1,
+            platform_slug: "gba".into(),
+            name: "Test".into(),
+            fs_name: "test.gba".into(),
+            fs_size_bytes: 1024,
+            igdb_id: None,
+            summary: None,
+            url_cover: None,
+            igdb_metadata: None,
+        };
+        
+        let game = rom.into_game("https://romm.example.com");
+        assert_eq!(game.source, crate::models::GameSource::RomM);
+        assert_eq!(game.romm_id, Some(123));
+    }
 }

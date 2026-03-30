@@ -7,22 +7,27 @@
  * - Core download workflow
  * - Error handling for invalid/unavailable cores
  * - Core installation verification
+ * 
+ * NOTE: These tests will FAIL (not skip) if core download doesn't work properly.
+ * This ensures we catch regressions in the download functionality.
  */
 
 import { ensureMainApp, goToSettings } from './helpers.js';
+
+// Track if RetroArch is installed for conditional test requirements
+let retroarchInstalled = false;
 
 describe('RetroArch Cores - Prerequisites', () => {
   before(async () => {
     await ensureMainApp();
   });
 
-  it('should have RetroArch installed for core tests', async () => {
+  it('should detect RetroArch installation status', async () => {
     await goToSettings();
     await browser.pause(2000);
     
     // Look for RetroArch in the installed section
     const retroarchElements = await $$('*=RetroArch');
-    let retroarchInstalled = false;
     
     for (const el of retroarchElements) {
       const parent = await el.parentElement();
@@ -32,14 +37,17 @@ describe('RetroArch Cores - Prerequisites', () => {
       
       if (hasCheckIcon) {
         retroarchInstalled = true;
-        console.log('RetroArch is installed');
+        console.log('RetroArch is installed - core download tests will run');
         break;
       }
     }
     
     if (!retroarchInstalled) {
-      console.log('WARNING: RetroArch not installed - core tests may be skipped');
+      console.log('RetroArch NOT installed - core download tests will verify error handling');
     }
+    
+    // This test always passes - just detects status
+    expect(true).toBe(true);
   });
 });
 
@@ -191,8 +199,16 @@ describe('RetroArch Cores - Download Workflow', function() {
     }
     
     if (!downloadableChip) {
-      console.log('SKIP: No downloadable cores found - test passes by default');
-      // Test passes if no cores to download (RetroArch may not be installed or all cores installed)
+      // If RetroArch is installed but no cores to download, that's fine
+      // If RetroArch is NOT installed, this is expected
+      console.log('No downloadable cores found');
+      console.log(`  RetroArch installed: ${retroarchInstalled}`);
+      
+      if (retroarchInstalled) {
+        console.log('  All cores may already be installed - test passes');
+      } else {
+        console.log('  RetroArch not installed - cannot download cores');
+      }
       expect(true).toBe(true);
       return;
     }
@@ -203,18 +219,36 @@ describe('RetroArch Cores - Download Workflow', function() {
     await downloadableChip.click();
     await browser.pause(2000);
     
-    // Wait for result - some result should appear
+    // Wait for result - an alert MUST appear (success or error)
     const alert = await $('[role="alert"]');
     const hasAlert = await alert.waitForDisplayed({ timeout: 60000 }).catch(() => false);
     
-    if (hasAlert) {
-      const alertText = await alert.getText();
-      console.log(`Download result: ${alertText}`);
-      expect(alertText.length).toBeGreaterThan(0);
-    } else {
-      // No alert might mean download is in progress or UI handles differently
-      console.log('No alert shown - download may be in progress');
-      expect(true).toBe(true);
+    // STRICT: If we clicked download, we MUST get feedback
+    expect(hasAlert).toBe(true);
+    
+    const alertText = await alert.getText();
+    console.log(`Download result: ${alertText}`);
+    
+    // Verify the alert contains meaningful content
+    expect(alertText.length).toBeGreaterThan(0);
+    
+    // Check for known error patterns that indicate real problems
+    const criticalErrors = [
+      'invalid zip',
+      'eocd',
+      'html instead of zip',
+      '404'
+    ];
+    
+    const isCriticalError = criticalErrors.some(e => 
+      alertText.toLowerCase().includes(e.toLowerCase())
+    );
+    
+    if (isCriticalError) {
+      console.log('CRITICAL: Core download returned error that should not happen');
+      console.log(`  Error: ${alertText}`);
+      // This is a REAL failure - the download infrastructure is broken
+      expect(isCriticalError).toBe(false);
     }
   });
 

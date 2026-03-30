@@ -79,4 +79,89 @@ mod tests {
         let asset = find_matching_asset(&release, "(?i)dolphin.*x64.*\\.7z$");
         assert!(asset.is_some());
     }
+
+    #[test]
+    fn invalid_regex_returns_none() {
+        let release = mock_release();
+        // Invalid regex with unclosed bracket
+        let asset = find_matching_asset(&release, "(?i)ppsspp[");
+        assert!(asset.is_none());
+    }
+
+    #[test]
+    fn empty_assets_returns_none() {
+        let release = GitHubRelease {
+            tag_name: "v1.0".into(),
+            name: None,
+            assets: vec![],
+        };
+        let asset = find_matching_asset(&release, ".*\\.zip$");
+        assert!(asset.is_none());
+    }
+
+    #[test]
+    fn returns_first_match() {
+        let release = GitHubRelease {
+            tag_name: "v1.0".into(),
+            name: None,
+            assets: vec![
+                GitHubAsset { name: "app-win32.zip".into(), browser_download_url: "https://a.com/1".into(), size: 100, content_type: None },
+                GitHubAsset { name: "app-win64.zip".into(), browser_download_url: "https://a.com/2".into(), size: 200, content_type: None },
+            ],
+        };
+        let asset = find_matching_asset(&release, ".*\\.zip$");
+        assert!(asset.is_some());
+        assert_eq!(asset.unwrap().name, "app-win32.zip"); // First match
+    }
+
+    #[test]
+    fn asset_size_is_preserved() {
+        let release = mock_release();
+        let asset = find_matching_asset(&release, "(?i)ppsspp.*windows.*x64.*\\.zip$").unwrap();
+        assert_eq!(asset.size, 50000000);
+    }
+
+    #[test]
+    fn asset_url_is_preserved() {
+        let release = mock_release();
+        let asset = find_matching_asset(&release, "(?i)ppsspp.*windows.*x64.*\\.zip$").unwrap();
+        assert_eq!(asset.browser_download_url, "https://example.com/ppsspp.zip");
+    }
+
+    #[test]
+    fn matches_mgba_pattern() {
+        let release = GitHubRelease {
+            tag_name: "0.10.3".into(),
+            name: Some("mGBA 0.10.3".into()),
+            assets: vec![
+                GitHubAsset { name: "mGBA-0.10.3-win64.7z".into(), browser_download_url: "https://a.com/mgba.7z".into(), size: 100, content_type: None },
+                GitHubAsset { name: "mGBA-0.10.3-ubuntu.tar.xz".into(), browser_download_url: "https://a.com/mgba.tar.xz".into(), size: 100, content_type: None },
+            ],
+        };
+        let asset = find_matching_asset(&release, "(?i)mGBA.*win64.*\\.7z$");
+        assert!(asset.is_some());
+        assert!(asset.unwrap().name.contains("win64"));
+    }
+
+    #[test]
+    fn matches_pcsx2_pattern() {
+        let release = GitHubRelease {
+            tag_name: "v1.7.5".into(),
+            name: None,
+            assets: vec![
+                GitHubAsset { name: "pcsx2-v1.7.5-windows-x64-Qt.7z".into(), browser_download_url: "https://a.com/pcsx2.7z".into(), size: 100, content_type: None },
+            ],
+        };
+        let asset = find_matching_asset(&release, "(?i)pcsx2.*windows.*x64.*\\.7z$");
+        assert!(asset.is_some());
+    }
+
+    #[test]
+    fn skips_source_archives() {
+        let release = mock_release();
+        // Pattern that should match zip but not Source.zip
+        let asset = find_matching_asset(&release, "(?i)ppsspp.*\\.zip$");
+        assert!(asset.is_some());
+        assert!(!asset.unwrap().name.starts_with("Source"));
+    }
 }

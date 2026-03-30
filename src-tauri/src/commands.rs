@@ -49,7 +49,114 @@ pub async fn get_all_games() -> Result<Vec<Game>, String> {
     let db = Database::open().map_err(|e| e.to_string())?;
     let games = db.get_all_games().map_err(|e| e.to_string())?;
     tracing::info!("[Library] Loaded {} games from database", games.len());
-    Ok(games)
+    
+    // Validate local paths and update sync states
+    let validated_games = validate_game_paths(games, &db);
+    Ok(validated_games)
+}
+
+/// Validate that local ROM files exist and update sync states accordingly
+fn validate_game_paths(games: Vec<Game>, db: &Database) -> Vec<Game> {
+    let config = AppConfig::load().ok();
+    
+    games.into_iter().map(|mut game| {
+        let original_state = game.sync_state;
+        let original_path = game.local_file_path.clone();
+        
+        // Check if local file path exists
+        if let Some(ref local_path) = game.local_file_path {
+            let path = std::path::Path::new(local_path);
+            if path.exists() {
+                // File exists - mark as synced if it was remote_only
+                if game.sync_state == crate::models::SyncState::RemoteOnly {
+                    game.sync_state = crate::models::SyncState::Synced;
+                }
+            } else {
+                // File doesn't exist - mark as remote only if from RomM
+                if game.romm_id.is_some() {
+                    game.sync_state = crate::models::SyncState::RemoteOnly;
+                    game.local_file_path = None;
+                }
+            }
+        } else if game.romm_id.is_some() {
+            // No local path but has RomM ID - try to discover file
+            if let Some(ref cfg) = config {
+                if let Some(discovered_path) = discover_rom_file(&game, cfg) {
+                    game.local_file_path = Some(discovered_path);
+                    game.sync_state = crate::models::SyncState::Synced;
+                } else {
+                    game.sync_state = crate::models::SyncState::RemoteOnly;
+                }
+            }
+        }
+        
+        // Persist changes if state or path changed
+        if game.sync_state != original_state || game.local_file_path != original_path {
+            if let Err(e) = db.update_game(&game) {
+                tracing::warn!("[Library] Failed to update game {}: {}", game.id, e);
+            }
+        }
+        
+        game
+    }).collect()
+}
+
+/// Try to discover a ROM file in expected locations
+fn discover_rom_file(game: &Game, config: &AppConfig) -> Option<String> {
+    let roms_dir = config.roms_dir();
+    let platform_dir = roms_dir.join(&game.platform_id);
+    
+    if !platform_dir.exists() {
+        return None;
+    }
+    
+    // Normalize game name for matching
+    let normalized_name = normalize_for_match(&game.name);
+    
+    // Also try matching the file_path (which contains the original filename)
+    let file_path_stem = std::path::Path::new(&game.file_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| normalize_for_match(s));
+    
+    // Search for matching files
+    if let Ok(entries) = std::fs::read_dir(&platform_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let normalized_stem = normalize_for_match(stem);
+                    
+                    // Match by game name or original filename
+                    if normalized_stem == normalized_name {
+                        tracing::debug!("[Discovery] Found ROM by name: {:?}", path);
+                        return Some(path.to_string_lossy().to_string());
+                    }
+                    
+                    if let Some(ref fp_stem) = file_path_stem {
+                        if &normalized_stem == fp_stem {
+                            tracing::debug!("[Discovery] Found ROM by filename: {:?}", path);
+                            return Some(path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    None
+}
+
+/// Normalize a string for fuzzy matching (like Argosy does)
+fn normalize_for_match(name: &str) -> String {
+    name.chars()
+        .map(|c| if c == '_' { ' ' } else { c }) // Treat underscores as spaces
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .collect::<String>()
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 #[tauri::command]
@@ -418,6 +525,153 @@ pub async fn upload_game_save(
         .map_err(|e| e.to_string())
 }
 
+// ========== Game Management Commands ==========
+
+#[tauri::command]
+pub async fn delete_local_rom(game_id: i64) -> Result<String, String> {
+    tracing::info!("[Game] Deleting local ROM for game id={}", game_id);
+    
+    let db = Database::open().map_err(|e| e.to_string())?;
+    let game = db.get_game(game_id).map_err(|e| e.to_string())?
+        .ok_or("Game not found")?;
+    
+    let mut deleted_path = String::new();
+    
+    if let Some(local_path) = &game.local_file_path {
+        let path = std::path::Path::new(local_path);
+        if path.exists() {
+            std::fs::remove_file(path).map_err(|e| {
+                tracing::error!("[Game] Failed to delete file: {}", e);
+                format!("Failed to delete file: {}", e)
+            })?;
+            deleted_path = local_path.clone();
+            tracing::info!("[Game] Deleted ROM file: {}", local_path);
+        }
+    }
+    
+    if game.romm_id.is_some() {
+        db.clear_local_path(game_id).map_err(|e| e.to_string())?;
+        tracing::info!("[Game] Cleared local path, game remains in library (RomM sync)");
+    } else {
+        db.delete_game(game_id).map_err(|e| e.to_string())?;
+        tracing::info!("[Game] Deleted local-only game from database");
+    }
+    
+    Ok(deleted_path)
+}
+
+#[tauri::command]
+pub async fn toggle_game_hidden(game_id: i64) -> Result<bool, String> {
+    tracing::info!("[Game] Toggling hidden status for game id={}", game_id);
+    
+    let db = Database::open().map_err(|e| e.to_string())?;
+    let game = db.get_game(game_id).map_err(|e| e.to_string())?
+        .ok_or("Game not found")?;
+    
+    let new_state = !game.is_hidden;
+    db.set_hidden(game_id, new_state).map_err(|e| e.to_string())?;
+    
+    tracing::info!("[Game] Game {} is now {}", game.name, if new_state { "hidden" } else { "visible" });
+    Ok(new_state)
+}
+
+#[tauri::command]
+pub async fn get_hidden_games() -> Result<Vec<Game>, String> {
+    let db = Database::open().map_err(|e| e.to_string())?;
+    db.get_hidden_games().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn unhide_game(game_id: i64) -> Result<(), String> {
+    let db = Database::open().map_err(|e| e.to_string())?;
+    db.set_hidden(game_id, false).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn open_rom_location(game_id: i64) -> Result<(), String> {
+    tracing::info!("[Game] Opening ROM location for game id={}", game_id);
+    
+    let db = Database::open().map_err(|e| e.to_string())?;
+    let game = db.get_game(game_id).map_err(|e| e.to_string())?
+        .ok_or("Game not found")?;
+    
+    let path = game.local_file_path.clone()
+        .or_else(|| if game.file_path.is_empty() { None } else { Some(game.file_path.clone()) })
+        .ok_or("Game has no local file")?;
+    
+    let file_path = std::path::Path::new(&path);
+    
+    if !file_path.exists() {
+        return Err("File no longer exists".to_string());
+    }
+    
+    let _parent = file_path.parent().ok_or("Invalid file path")?;
+    
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .args(["/select,", &file_path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .args(["-R", &file_path.to_string_lossy()])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(parent)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    
+    tracing::info!("[Game] Opened file location: {}", path);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn refresh_game_metadata(
+    game_id: i64,
+    server_url: String,
+    token: String,
+) -> Result<Game, String> {
+    tracing::info!("[Game] Refreshing metadata for game id={}", game_id);
+    
+    let db = Database::open().map_err(|e| e.to_string())?;
+    let game = db.get_game(game_id).map_err(|e| e.to_string())?
+        .ok_or("Game not found")?;
+    
+    let romm_id = game.romm_id.ok_or("Game has no RomM ID (local-only game)")?;
+    
+    let client = RomMClient::new(&server_url).with_token(token);
+    let rom = client.get_rom(romm_id).await.map_err(|e| e.to_string())?;
+    
+    let mut updated_game = rom.into_game(&server_url);
+    updated_game.id = game.id;
+    updated_game.is_favorite = game.is_favorite;
+    updated_game.is_hidden = game.is_hidden;
+    updated_game.play_count = game.play_count;
+    updated_game.play_time_minutes = game.play_time_minutes;
+    updated_game.last_played_at = game.last_played_at;
+    updated_game.local_file_path = game.local_file_path.clone();
+    
+    if game.local_file_path.is_some() {
+        updated_game.sync_state = crate::models::SyncState::Synced;
+    }
+    
+    db.update_game(&updated_game).map_err(|e| e.to_string())?;
+    
+    tracing::info!("[Game] Metadata refreshed for: {}", updated_game.name);
+    Ok(updated_game)
+}
+
 #[tauri::command]
 pub async fn detect_emulators() -> Result<Vec<EmulatorInfo>, String> {
     tracing::info!("[Emulators] Starting emulator detection");
@@ -779,5 +1033,180 @@ pub async fn apply_detected_paths() -> Result<i32, String> {
     config.save().map_err(|e| e.to_string())?;
     tracing::info!("[Config] Applied {} emulator paths", count);
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_for_match_basic() {
+        assert_eq!(normalize_for_match("Super Mario Bros"), "super mario bros");
+        assert_eq!(normalize_for_match("SONIC THE HEDGEHOG"), "sonic the hedgehog");
+    }
+
+    #[test]
+    fn test_normalize_for_match_removes_special_chars() {
+        assert_eq!(normalize_for_match("Game: The Sequel!"), "game the sequel");
+        assert_eq!(normalize_for_match("Test (USA) [Rev 1]"), "test usa rev 1");
+    }
+
+    #[test]
+    fn test_normalize_for_match_handles_whitespace() {
+        assert_eq!(normalize_for_match("  Extra   Spaces  "), "extra spaces");
+        assert_eq!(normalize_for_match("Tab\tSeparated"), "tab separated");
+    }
+
+    #[test]
+    fn test_normalize_for_match_preserves_numbers() {
+        assert_eq!(normalize_for_match("Final Fantasy 7"), "final fantasy 7");
+        assert_eq!(normalize_for_match("2048"), "2048");
+    }
+
+    #[test]
+    fn test_normalize_for_match_empty_string() {
+        assert_eq!(normalize_for_match(""), "");
+    }
+
+    #[test]
+    fn test_normalize_for_match_only_special_chars() {
+        assert_eq!(normalize_for_match("!!!???"), "");
+        assert_eq!(normalize_for_match("---"), "");
+    }
+
+    #[test]
+    fn test_normalize_matches_same_game_different_formats() {
+        // These should all normalize to the same value for matching
+        let names = [
+            "Super Mario Bros",
+            "SUPER MARIO BROS",
+            "Super  Mario  Bros",
+            "  Super Mario Bros  ",
+            "Super_Mario_Bros",  // Underscores treated as spaces
+        ];
+        
+        let first = normalize_for_match(names[0]);
+        for name in &names[1..] {
+            assert_eq!(normalize_for_match(name), first, 
+                "Expected '{}' to match '{}'", name, names[0]);
+        }
+    }
+
+    #[test]
+    fn test_normalize_treats_underscores_as_spaces() {
+        // Underscores should be converted to spaces for better ROM matching
+        let with_underscore = normalize_for_match("Super_Mario_Bros");
+        let with_spaces = normalize_for_match("Super Mario Bros");
+        
+        assert_eq!(with_underscore, with_spaces);
+        assert_eq!(with_underscore, "super mario bros");
+    }
+
+    #[test]
+    fn test_normalize_different_games_dont_match() {
+        assert_ne!(
+            normalize_for_match("Super Mario Bros"),
+            normalize_for_match("Super Mario Bros 2")
+        );
+        assert_ne!(
+            normalize_for_match("Sonic"),
+            normalize_for_match("Sonic 2")
+        );
+    }
+
+    // Tests for LaunchGameResult
+    #[test]
+    fn test_launch_game_result_success() {
+        let result = LaunchGameResult {
+            success: true,
+            error: None,
+            dry_run: false,
+            duration_minutes: Some(60),
+            exit_code: Some(0),
+        };
+        assert!(result.success);
+        assert!(result.error.is_none());
+        assert!(!result.dry_run);
+        assert_eq!(result.duration_minutes, Some(60));
+        assert_eq!(result.exit_code, Some(0));
+    }
+
+    #[test]
+    fn test_launch_game_result_failure() {
+        let result = LaunchGameResult {
+            success: false,
+            error: Some("Emulator not found".to_string()),
+            dry_run: false,
+            duration_minutes: None,
+            exit_code: None,
+        };
+        assert!(!result.success);
+        assert_eq!(result.error, Some("Emulator not found".to_string()));
+    }
+
+    #[test]
+    fn test_launch_game_result_dry_run() {
+        let result = LaunchGameResult {
+            success: true,
+            error: None,
+            dry_run: true,
+            duration_minutes: None,
+            exit_code: None,
+        };
+        assert!(result.success);
+        assert!(result.dry_run);
+    }
+
+    // Tests for EmulatorInfo
+    #[test]
+    fn test_emulator_info_installed() {
+        let info = EmulatorInfo {
+            id: "retroarch".to_string(),
+            name: "RetroArch".to_string(),
+            is_installed: true,
+            installed_path: Some("C:\\RetroArch\\retroarch.exe".to_string()),
+            install_type: Some("system".to_string()),
+            version: Some("1.16.0".to_string()),
+            has_download: true,
+            supported_platforms: vec!["gba".to_string(), "snes".to_string()],
+        };
+        assert!(info.is_installed);
+        assert!(info.installed_path.is_some());
+        assert_eq!(info.supported_platforms.len(), 2);
+    }
+
+    #[test]
+    fn test_emulator_info_not_installed() {
+        let info = EmulatorInfo {
+            id: "mgba".to_string(),
+            name: "mGBA".to_string(),
+            is_installed: false,
+            installed_path: None,
+            install_type: None,
+            version: None,
+            has_download: true,
+            supported_platforms: vec!["gba".to_string()],
+        };
+        assert!(!info.is_installed);
+        assert!(info.installed_path.is_none());
+        assert!(info.has_download);
+    }
+
+    // Tests for LaunchCommand
+    #[test]
+    fn test_launch_command_fields() {
+        let cmd = LaunchCommand {
+            executable: "C:\\RetroArch\\retroarch.exe".to_string(),
+            emulator_name: "RetroArch".to_string(),
+            game_name: "Super Mario".to_string(),
+            rom_path: "C:\\ROMs\\mario.gba".to_string(),
+            args: vec!["-L".to_string(), "core.dll".to_string(), "game.gba".to_string()],
+            full_command: "C:\\RetroArch\\retroarch.exe -L core.dll game.gba".to_string(),
+        };
+        assert_eq!(cmd.executable, "C:\\RetroArch\\retroarch.exe");
+        assert_eq!(cmd.args.len(), 3);
+        assert!(cmd.full_command.contains("retroarch.exe"));
+        assert_eq!(cmd.game_name, "Super Mario");
+    }
 }
 

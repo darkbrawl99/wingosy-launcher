@@ -10,7 +10,15 @@ import Alert from "@mui/material/Alert";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
+import ListItemIcon from "@mui/material/ListItemIcon";
 import LinearProgress from "@mui/material/LinearProgress";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogActions from "@mui/material/DialogActions";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
@@ -22,6 +30,11 @@ import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
 import SaveIcon from "@mui/icons-material/Save";
 import UploadFileIcon from "@mui/icons-material/UploadFile";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import DeleteIcon from "@mui/icons-material/Delete";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
 
@@ -44,6 +57,7 @@ export default function GameDetails({
   onBack,
   onLaunch,
   onToggleFavorite,
+  onGameUpdate,
   rommToken,
   rommUrl,
 }) {
@@ -54,6 +68,16 @@ export default function GameDetails({
   const [savesLoading, setSavesLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [imgError, setImgError] = useState(false);
+  
+  // Track if ROM was just downloaded (for immediate UI update)
+  const [justDownloaded, setJustDownloaded] = useState(false);
+  const [downloadedPath, setDownloadedPath] = useState(null);
+  
+  // Game actions menu state
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [actionStatus, setActionStatus] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const platform = platforms.find(([p]) => p.id === game.platform_id)?.[0];
   const playHours = Math.floor(game.play_time_minutes / 60);
@@ -61,7 +85,12 @@ export default function GameDetails({
   const playTimeStr =
     playHours > 0 ? `${playHours}h ${playMins}m` : `${playMins}m`;
 
-  const isRemoteOnly = game.sync_state === "remote_only";
+  // Check if ROM is available locally (either has local_file_path, sync_state is not remote_only, or just downloaded)
+  const isRemoteOnly = (game.sync_state === "remote_only" || game.sync_state === "RemoteOnly") && !justDownloaded;
+  const hasLocalFile = (game.local_file_path && game.local_file_path.length > 0) || justDownloaded;
+  const canPlay = hasLocalFile || (!isRemoteOnly && game.source !== "RomM");
+  const canDownload = game.romm_id && rommToken && rommUrl;
+  
   const coverSrc = getCoverSrc(game.cover_path);
   const showCover = coverSrc && !imgError;
 
@@ -75,7 +104,16 @@ export default function GameDetails({
         serverUrl: rommUrl,
         token: rommToken,
       });
-      setDownloadStatus({ type: "success", message: `Downloaded to ${destPath}` });
+      
+      // Mark as downloaded for immediate UI update
+      setJustDownloaded(true);
+      setDownloadedPath(destPath);
+      setDownloadStatus({ type: "success", message: `Downloaded! Ready to play.` });
+      
+      // Notify parent to refresh game list if callback provided
+      if (onGameUpdate) {
+        onGameUpdate(game.id);
+      }
     } catch (err) {
       setDownloadStatus({ type: "error", message: err.message || String(err) });
     } finally {
@@ -137,6 +175,70 @@ export default function GameDetails({
       handleListSaves();
     } catch (err) {
       setSaveStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  // Game Actions handlers
+  async function handleDeleteDownload() {
+    try {
+      setDeleteDialogOpen(false);
+      setMenuAnchor(null);
+      setActionStatus({ type: "info", message: "Deleting ROM..." });
+      await invoke("delete_local_rom", { gameId: game.id });
+      setActionStatus({ type: "success", message: "ROM deleted successfully" });
+      setJustDownloaded(false);
+      setDownloadedPath(null);
+      if (onGameUpdate) {
+        onGameUpdate(game.id);
+      }
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handleHideGame() {
+    try {
+      setMenuAnchor(null);
+      await invoke("toggle_game_hidden", { gameId: game.id });
+      setActionStatus({ type: "success", message: "Game hidden. View hidden games in Settings." });
+      if (onGameUpdate) {
+        onGameUpdate(game.id);
+      }
+      // Navigate back since game is now hidden
+      setTimeout(() => onBack(), 1500);
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handleRefreshMetadata() {
+    if (!rommToken || !rommUrl || !game.romm_id) return;
+    try {
+      setMenuAnchor(null);
+      setRefreshing(true);
+      setActionStatus({ type: "info", message: "Refreshing metadata from RomM..." });
+      await invoke("refresh_game_metadata", {
+        gameId: game.id,
+        serverUrl: rommUrl,
+        token: rommToken,
+      });
+      setActionStatus({ type: "success", message: "Metadata refreshed!" });
+      if (onGameUpdate) {
+        onGameUpdate(game.id);
+      }
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleOpenLocation() {
+    try {
+      setMenuAnchor(null);
+      await invoke("open_rom_location", { gameId: game.id });
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
     }
   }
 
@@ -237,28 +339,131 @@ export default function GameDetails({
             </Box>
           </Box>
 
-          <IconButton
-            onClick={() => onToggleFavorite(game.id)}
-            size="large"
-            sx={{ ml: 2 }}
-          >
-            {game.is_favorite ? (
-              <FavoriteIcon color="error" fontSize="large" />
-            ) : (
-              <FavoriteBorderIcon fontSize="large" />
-            )}
-          </IconButton>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <IconButton
+              onClick={() => onToggleFavorite(game.id)}
+              size="large"
+              sx={{ ml: 2 }}
+            >
+              {game.is_favorite ? (
+                <FavoriteIcon color="error" fontSize="large" />
+              ) : (
+                <FavoriteBorderIcon fontSize="large" />
+              )}
+            </IconButton>
+            
+            {/* Game Actions Menu */}
+            <IconButton
+              onClick={(e) => setMenuAnchor(e.currentTarget)}
+              size="large"
+              title="More options"
+            >
+              <MoreVertIcon fontSize="large" />
+            </IconButton>
+            
+            <Menu
+              anchorEl={menuAnchor}
+              open={Boolean(menuAnchor)}
+              onClose={() => setMenuAnchor(null)}
+            >
+              {/* Open ROM Location - only if has local file */}
+              {hasLocalFile && (
+                <MenuItem onClick={handleOpenLocation}>
+                  <ListItemIcon>
+                    <FolderOpenIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>Open ROM Location</ListItemText>
+                </MenuItem>
+              )}
+              
+              {/* Refresh Metadata - only for RomM games */}
+              {game.romm_id && rommToken && rommUrl && (
+                <MenuItem onClick={handleRefreshMetadata} disabled={refreshing}>
+                  <ListItemIcon>
+                    <RefreshIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText>{refreshing ? "Refreshing..." : "Refresh Metadata"}</ListItemText>
+                </MenuItem>
+              )}
+              
+              {/* Hide Game */}
+              <MenuItem onClick={handleHideGame}>
+                <ListItemIcon>
+                  <VisibilityOffIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText>Hide Game</ListItemText>
+              </MenuItem>
+              
+              {/* Delete Download - only if has local file */}
+              {hasLocalFile && (
+                <MenuItem onClick={() => { setMenuAnchor(null); setDeleteDialogOpen(true); }} sx={{ color: "error.main" }}>
+                  <ListItemIcon>
+                    <DeleteIcon fontSize="small" color="error" />
+                  </ListItemIcon>
+                  <ListItemText>Delete Download</ListItemText>
+                </MenuItem>
+              )}
+            </Menu>
+          </Box>
         </Box>
+        
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
+          <DialogTitle>Delete Downloaded ROM?</DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              This will delete the local ROM file for "{game.name}".
+              {game.romm_id ? " The game will remain in your library (from RomM) and can be re-downloaded." 
+                : " This will remove the game from your library completely."}
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleDeleteDownload} color="error" variant="contained">
+              Delete
+            </Button>
+          </DialogActions>
+        </Dialog>
+        
+        {/* Action Status Alert */}
+        {actionStatus && (
+          <Alert 
+            severity={actionStatus.type} 
+            sx={{ mb: 2 }}
+            onClose={() => setActionStatus(null)}
+          >
+            {actionStatus.message}
+          </Alert>
+        )}
 
-        {/* Play or Download button */}
-        {isRemoteOnly ? (
-          <Box sx={{ mb: 4 }}>
+        {/* Play and/or Download buttons */}
+        <Box sx={{ display: "flex", gap: 2, mb: 4, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Show Play button if ROM is available locally */}
+          {canPlay && (
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<PlayArrowIcon />}
+              onClick={() => onLaunch(game.id)}
+              sx={{
+                px: 5,
+                py: 1.5,
+                fontSize: "1.1rem",
+                borderRadius: 3,
+              }}
+            >
+              Play
+            </Button>
+          )}
+          
+          {/* Show Download button for RomM games that aren't downloaded */}
+          {canDownload && !canPlay && (
             <Button
               variant="contained"
               size="large"
               startIcon={downloading ? null : <CloudDownloadIcon />}
               onClick={handleDownloadRom}
-              disabled={downloading || !rommToken}
+              disabled={downloading}
               sx={{
                 px: 5,
                 py: 1.5,
@@ -268,29 +473,31 @@ export default function GameDetails({
             >
               {downloading ? "Downloading..." : "Download ROM"}
             </Button>
-            {downloading && <LinearProgress sx={{ mt: 1, borderRadius: 2 }} />}
-            {downloadStatus && (
-              <Alert severity={downloadStatus.type} sx={{ mt: 2 }}>
-                {downloadStatus.message}
-              </Alert>
-            )}
-          </Box>
-        ) : (
-          <Button
-            variant="contained"
-            size="large"
-            startIcon={<PlayArrowIcon />}
-            onClick={() => onLaunch(game.id)}
-            sx={{
-              px: 5,
-              py: 1.5,
-              fontSize: "1.1rem",
-              borderRadius: 3,
-              mb: 4,
-            }}
-          >
-            Play
-          </Button>
+          )}
+          
+          {/* Show Re-download option for already downloaded RomM games */}
+          {canDownload && canPlay && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={downloading ? null : <CloudDownloadIcon />}
+              onClick={handleDownloadRom}
+              disabled={downloading}
+              color="secondary"
+              sx={{
+                borderRadius: 3,
+              }}
+            >
+              {downloading ? "Downloading..." : "Re-download"}
+            </Button>
+          )}
+        </Box>
+        
+        {downloading && <LinearProgress sx={{ mb: 2, borderRadius: 2 }} />}
+        {downloadStatus && (
+          <Alert severity={downloadStatus.type} sx={{ mb: 2 }}>
+            {downloadStatus.message}
+          </Alert>
         )}
 
         <Divider sx={{ my: 3 }} />

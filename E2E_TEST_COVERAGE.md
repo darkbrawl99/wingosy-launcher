@@ -10,10 +10,11 @@
 | `emulator-sensing.spec.js` | 15 | Emulator detection, install types |
 | `emulator-download.spec.js` | 16 | Emulator downloads, GitHub releases |
 | `retroarch-cores.spec.js` | 17 | RetroArch core management (unified with emulators) |
+| `rom-download.spec.js` | 10 | ROM download from RomM server |
 | `game-launch.spec.js` | 17 | Game library, launching, favorites |
 | `game-launch-gba.spec.js` | 14 | GBA-specific game launch |
 | `coverage-analysis.spec.js` | 26 | Additional coverage areas |
-| **Total** | **145** | |
+| **Total** | **155** | |
 
 ## Frontend Coverage (React Components)
 
@@ -146,20 +147,41 @@
 ## Test Commands
 
 ```bash
-# Run all tests
+# Run all E2E tests
 npm run test:e2e
 
-# Run individual test suites
+# Run individual E2E test suites
 npm run test:e2e:setup     # Setup wizard
 npm run test:e2e:app       # Core app
 npm run test:e2e:settings  # Settings page
 npm run test:e2e:sensing   # Emulator detection
 npm run test:e2e:download  # Emulator downloads
 npm run test:e2e:cores     # RetroArch cores
+npm run test:e2e:roms      # ROM downloads
 npm run test:e2e:games     # Game launch
 npm run test:e2e:gba       # GBA games
 npm run test:e2e:coverage  # Additional coverage
+
+# Run Rust tests
+npm run test:rust          # All Rust tests (unit + integration)
+npm run test:rust:unit     # Unit tests only
+npm run test:rust:critical # Critical integration tests (network-dependent)
 ```
+
+## Rust Unit Test Coverage
+
+| Module | Tests | Coverage Area |
+|--------|-------|---------------|
+| `api::download` | 10 | Download progress formatting, status enums |
+| `config` | 18 | Config serialization, defaults, path resolution |
+| `emulators::cores` | 7 | Core URL construction, ZIP validation |
+| `emulators::detection` | 11 | Emulator patterns, install types, struct tests |
+| `emulators::github` | 3 | Asset pattern matching |
+| `models::game` | 15 | Game creation, play time, filters, sources |
+| `models::platform` | 6 | Platform detection, slug mapping |
+| `models::sync` | 3 | Sync state serialization |
+| `scanner` | 2 | ROM name cleaning, multi-disc detection |
+| **Total** | **74** | |
 
 ## Known Limitations
 
@@ -184,3 +206,26 @@ npm run test:e2e:coverage  # Additional coverage
 - "Download All Cores" batch option
 - Warning alert when cores needed but RetroArch not installed
 - Better integration following Argosy's design pattern
+
+### Improved Test Coverage (Critical Fixes)
+- **Added critical Rust integration tests** that verify core downloads return valid ZIPs (not HTML error pages)
+- **Added ROM download E2E tests** covering download workflow, UI elements, and error handling
+- **Stricter E2E assertions** - tests now FAIL when known error patterns are detected (404, invalid ZIP, etc.)
+- **HTTP status validation** in download manager prevents downloading error pages
+- Tests no longer silently pass when functionality is broken
+
+### Unit Test Suite (74 tests)
+- **Added comprehensive unit tests** covering all major Rust modules
+- **Config module tests**: Serialization/deserialization, default values, path resolution
+- **Download module tests**: Progress formatting, size calculations, status enums
+- **Emulator detection tests**: Pattern matching, install types, struct validation
+- **Core download tests**: URL construction, ZIP validation (magic bytes, HTML detection)
+- **Game model tests**: Play time formatting, filters, source handling
+- **Platform tests**: Extension detection, slug mapping
+
+### File Logging (Production)
+- **Added persistent file logging** for all builds (not just debug)
+- Logs written to `%APPDATA%/wingosy/wingosy-launcher/wingosy.log`
+- Rolling daily log files with 7-day retention
+- Includes thread IDs, file locations, and line numbers for debugging
+- Helps diagnose user-reported issues in production

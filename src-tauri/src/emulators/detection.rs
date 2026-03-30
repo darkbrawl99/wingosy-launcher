@@ -517,3 +517,112 @@ pub fn launch_emulator(path: &PathBuf) -> Result<(), String> {
         .map_err(|e| format!("Failed to launch emulator: {}", e))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_install_type_as_str() {
+        assert_eq!(InstallType::Steam.as_str(), "steam");
+        assert_eq!(InstallType::System.as_str(), "system");
+        assert_eq!(InstallType::Portable.as_str(), "portable");
+        assert_eq!(InstallType::Managed.as_str(), "managed");
+        assert_eq!(InstallType::Custom.as_str(), "custom");
+    }
+
+    #[test]
+    fn test_detected_emulator_struct() {
+        let emu = DetectedEmulator {
+            id: "retroarch".to_string(),
+            name: "RetroArch".to_string(),
+            path: PathBuf::from("C:/RetroArch/retroarch.exe"),
+            version: Some("1.16.0".to_string()),
+            install_type: InstallType::Portable,
+        };
+        
+        assert_eq!(emu.id, "retroarch");
+        assert_eq!(emu.name, "RetroArch");
+        assert!(emu.path.to_string_lossy().contains("retroarch.exe"));
+        assert_eq!(emu.version, Some("1.16.0".to_string()));
+        assert_eq!(emu.install_type, InstallType::Portable);
+    }
+
+    #[test]
+    fn test_retroarch_core_struct() {
+        let core = RetroArchCore {
+            name: "snes9x_libretro".to_string(),
+            path: PathBuf::from("C:/RetroArch/cores/snes9x_libretro.dll"),
+        };
+        
+        assert_eq!(core.name, "snes9x_libretro");
+        assert!(core.path.to_string_lossy().contains("snes9x_libretro.dll"));
+    }
+
+    #[test]
+    fn test_install_type_clone() {
+        let original = InstallType::Steam;
+        let cloned = original.clone();
+        assert_eq!(original, cloned);
+    }
+
+    #[test]
+    fn test_detected_emulator_clone() {
+        let emu = DetectedEmulator {
+            id: "test".to_string(),
+            name: "Test Emu".to_string(),
+            path: PathBuf::from("C:/test.exe"),
+            version: None,
+            install_type: InstallType::Custom,
+        };
+        
+        let cloned = emu.clone();
+        assert_eq!(emu.id, cloned.id);
+        assert_eq!(emu.name, cloned.name);
+        assert_eq!(emu.path, cloned.path);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_get_emulator_patterns_not_empty() {
+        let patterns = get_emulator_patterns();
+        assert!(!patterns.is_empty());
+        
+        // Should include common emulators
+        let ids: Vec<&str> = patterns.iter().map(|(id, _, _)| *id).collect();
+        assert!(ids.contains(&"retroarch"));
+        assert!(ids.contains(&"dolphin"));
+        assert!(ids.contains(&"pcsx2"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_emulator_patterns_have_executables() {
+        let patterns = get_emulator_patterns();
+        
+        for (id, name, executables) in &patterns {
+            assert!(!id.is_empty(), "ID should not be empty");
+            assert!(!name.is_empty(), "Name should not be empty");
+            assert!(!executables.is_empty(), "{} should have at least one executable", name);
+            
+            for exe in *executables {
+                assert!(exe.ends_with(".exe"), "{} executable {} should end with .exe", name, exe);
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_get_common_install_paths_not_empty() {
+        let paths = get_common_install_paths();
+        // Should find at least some paths on any Windows system
+        assert!(!paths.is_empty());
+    }
+
+    #[test]
+    fn test_find_retroarch_cores_nonexistent_path() {
+        let fake_path = PathBuf::from("C:/NonExistent/Path/retroarch.exe");
+        let cores = find_retroarch_cores(&fake_path);
+        assert!(cores.is_empty());
+    }
+}

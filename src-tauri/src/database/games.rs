@@ -356,6 +356,44 @@ impl Database {
             local_file_path: row.get("local_file_path")?,
         })
     }
+
+    /// Set the hidden status of a game
+    pub fn set_hidden(&self, game_id: i64, is_hidden: bool) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE games SET is_hidden = ?2, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![game_id, is_hidden],
+        )
+        .context("Failed to update hidden status")?;
+        Ok(())
+    }
+
+    /// Get all hidden games
+    pub fn get_hidden_games(&self) -> Result<Vec<Game>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT * FROM games WHERE is_hidden = 1 ORDER BY name")
+            .context("Failed to prepare statement")?;
+
+        let games = stmt
+            .query_map([], |row: &Row| Ok(Self::row_to_game(row)))
+            .context("Failed to query games")?
+            .filter_map(|r| r.ok().and_then(|g| g.ok()))
+            .collect();
+
+        Ok(games)
+    }
+
+    /// Clear the local file path (after deleting the ROM)
+    pub fn clear_local_path(&self, game_id: i64) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE games SET local_file_path = NULL, sync_state = 'remote_only', updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            params![game_id],
+        )
+        .context("Failed to clear local path")?;
+        Ok(())
+    }
 }
 
 trait OptionalExt<T> {
@@ -369,5 +407,116 @@ impl<T> OptionalExt<T> for std::result::Result<T, rusqlite::Error> {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Game, GameSource, SyncState};
+
+    fn create_test_game(name: &str) -> Game {
+        Game {
+            id: 0,
+            platform_id: "gba".to_string(),
+            name: name.to_string(),
+            file_path: String::new(),
+            source: GameSource::Local,
+            romm_id: None,
+            summary: None,
+            developer: None,
+            publisher: None,
+            release_year: None,
+            genres: vec![],
+            player_count: None,
+            cover_path: None,
+            screenshot_paths: vec![],
+            is_favorite: false,
+            is_hidden: false,
+            user_rating: None,
+            last_played_at: None,
+            play_count: 0,
+            play_time_minutes: 0,
+            sync_state: SyncState::LocalOnly,
+            local_file_path: None,
+        }
+    }
+
+    #[test]
+    fn test_game_filter_default() {
+        let filter = GameFilter::default();
+        assert!(filter.platform_id.is_none());
+        assert!(filter.genre.is_none());
+        assert!(filter.search_query.is_none());
+        assert!(!filter.favorites_only);
+        assert!(!filter.sort_descending);
+    }
+
+    #[test]
+    fn test_game_sort_variants() {
+        let sorts = [
+            GameSort::Name,
+            GameSort::LastPlayed,
+            GameSort::PlayCount,
+            GameSort::PlayTime,
+            GameSort::ReleaseYear,
+            GameSort::RecentlyAdded,
+            GameSort::Rating,
+        ];
+        assert_eq!(sorts.len(), 7);
+    }
+
+    #[test]
+    fn test_create_test_game_defaults() {
+        let game = create_test_game("Test Game");
+        assert_eq!(game.name, "Test Game");
+        assert_eq!(game.platform_id, "gba");
+        assert!(!game.is_favorite);
+        assert!(!game.is_hidden);
+        assert_eq!(game.play_count, 0);
+    }
+
+    #[test]
+    fn test_game_with_hidden_flag() {
+        let mut game = create_test_game("Hidden Game");
+        game.is_hidden = true;
+        assert!(game.is_hidden);
+    }
+
+    #[test]
+    fn test_game_with_romm_id() {
+        let mut game = create_test_game("RomM Game");
+        game.romm_id = Some(123);
+        game.source = GameSource::RomM;
+        assert_eq!(game.romm_id, Some(123));
+        assert!(matches!(game.source, GameSource::RomM));
+    }
+
+    #[test]
+    fn test_game_with_local_file_path() {
+        let mut game = create_test_game("Local Game");
+        game.local_file_path = Some("C:\\ROMs\\game.gba".to_string());
+        game.sync_state = SyncState::Synced;
+        assert!(game.local_file_path.is_some());
+        assert!(matches!(game.sync_state, SyncState::Synced));
+    }
+
+    #[test]
+    fn test_sync_state_variants() {
+        let states = [
+            SyncState::LocalOnly,
+            SyncState::RemoteOnly,
+            SyncState::Synced,
+            SyncState::PendingUpload,
+            SyncState::PendingDownload,
+            SyncState::Conflict,
+        ];
+        assert_eq!(states.len(), 6);
+    }
+
+    #[test]
+    fn test_game_source_to_db_str() {
+        assert_eq!(GameSource::Local.to_db_str(), "local");
+        assert_eq!(GameSource::RomM.to_db_str(), "romm");
     }
 }

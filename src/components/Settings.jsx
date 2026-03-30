@@ -32,6 +32,12 @@ import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ListItemSecondaryAction from "@mui/material/ListItemSecondaryAction";
+import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogActions from "@mui/material/DialogActions";
 import { invoke } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
 import normalizeUrl from "../utils/normalizeUrl";
@@ -51,6 +57,11 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   const [emuMenuAnchor, setEmuMenuAnchor] = useState(null);
   const [selectedEmu, setSelectedEmu] = useState(null);
   const [expandedEmu, setExpandedEmu] = useState(null);
+  
+  // Hidden games state
+  const [hiddenGames, setHiddenGames] = useState([]);
+  const [hiddenDialogOpen, setHiddenDialogOpen] = useState(false);
+  const [hiddenLoading, setHiddenLoading] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -198,6 +209,33 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       setEmuMessage({ type: "error", message: `Failed to open location: ${err}` });
     }
     handleEmuMenuClose();
+  }
+
+  // Hidden Games functions
+  async function loadHiddenGames() {
+    try {
+      setHiddenLoading(true);
+      const games = await invoke("get_hidden_games");
+      setHiddenGames(games);
+    } catch (err) {
+      console.error("Failed to load hidden games:", err);
+    } finally {
+      setHiddenLoading(false);
+    }
+  }
+
+  async function handleUnhideGame(gameId) {
+    try {
+      await invoke("unhide_game", { gameId });
+      setHiddenGames(hiddenGames.filter(g => g.id !== gameId));
+    } catch (err) {
+      console.error("Failed to unhide game:", err);
+    }
+  }
+
+  function handleOpenHiddenDialog() {
+    loadHiddenGames();
+    setHiddenDialogOpen(true);
   }
 
   function getInstallTypeLabel(installType) {
@@ -551,6 +589,71 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
           </Alert>
         )}
       </Paper>
+
+      {/* Hidden Games Section */}
+      <Paper sx={{ p: 3, borderRadius: 3, background: "linear-gradient(135deg, #1e1e26 0%, #252530 100%)" }}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+          <VisibilityOffIcon color="primary" />
+          <Typography variant="h6">Hidden Games</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          View and restore games that you've hidden from your library.
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<VisibilityIcon />}
+          onClick={handleOpenHiddenDialog}
+        >
+          View Hidden Games
+        </Button>
+      </Paper>
+
+      {/* Hidden Games Dialog */}
+      <Dialog
+        open={hiddenDialogOpen}
+        onClose={() => setHiddenDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <VisibilityOffIcon />
+            Hidden Games
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {hiddenLoading ? (
+            <LinearProgress sx={{ my: 2 }} />
+          ) : hiddenGames.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: "center" }}>
+              No hidden games. Games you hide will appear here.
+            </Typography>
+          ) : (
+            <List dense>
+              {hiddenGames.map((game) => (
+                <ListItem key={game.id}>
+                  <ListItemText
+                    primary={game.name}
+                    secondary={game.platform_id?.toUpperCase()}
+                    secondaryTypographyProps={{ fontSize: "0.7rem" }}
+                  />
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<VisibilityIcon />}
+                    onClick={() => handleUnhideGame(game.id)}
+                  >
+                    Unhide
+                  </Button>
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHiddenDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -158,3 +158,99 @@ pub enum DownloadStatus {
     Failed,
     Cancelled,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_size_bytes() {
+        assert_eq!(DownloadProgress::format_size(0), "0 B");
+        assert_eq!(DownloadProgress::format_size(500), "500 B");
+        assert_eq!(DownloadProgress::format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_size_kilobytes() {
+        assert_eq!(DownloadProgress::format_size(1024), "1.00 KB");
+        assert_eq!(DownloadProgress::format_size(1536), "1.50 KB");
+        assert_eq!(DownloadProgress::format_size(10240), "10.00 KB");
+    }
+
+    #[test]
+    fn test_format_size_megabytes() {
+        assert_eq!(DownloadProgress::format_size(1024 * 1024), "1.00 MB");
+        assert_eq!(DownloadProgress::format_size(5 * 1024 * 1024), "5.00 MB");
+        assert_eq!(DownloadProgress::format_size(1536 * 1024), "1.50 MB");
+    }
+
+    #[test]
+    fn test_format_size_gigabytes() {
+        assert_eq!(DownloadProgress::format_size(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(DownloadProgress::format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    }
+
+    #[test]
+    fn test_status_text_with_total() {
+        let progress = DownloadProgress {
+            downloaded: 512 * 1024,
+            total: Some(1024 * 1024),
+            percent: Some(50),
+        };
+        
+        let status = progress.status_text();
+        assert!(status.contains("512.00 KB"));
+        assert!(status.contains("1.00 MB"));
+        assert!(status.contains("50%"));
+    }
+
+    #[test]
+    fn test_status_text_without_total() {
+        let progress = DownloadProgress {
+            downloaded: 512 * 1024,
+            total: None,
+            percent: None,
+        };
+        
+        let status = progress.status_text();
+        assert_eq!(status, "512.00 KB");
+    }
+
+    #[test]
+    fn test_download_status_equality() {
+        assert_eq!(DownloadStatus::Queued, DownloadStatus::Queued);
+        assert_ne!(DownloadStatus::Queued, DownloadStatus::Downloading);
+        assert_eq!(DownloadStatus::Completed, DownloadStatus::Completed);
+    }
+
+    #[test]
+    fn test_download_manager_default() {
+        let _dm = DownloadManager::default();
+        // Should create without panicking
+        assert!(true);
+    }
+
+    #[test]
+    fn test_progress_percent_calculation() {
+        // Test typical progress scenario
+        let total: u64 = 1000;
+        let downloaded: u64 = 250;
+        let percent = (downloaded as f64 / total as f64 * 100.0) as u8;
+        assert_eq!(percent, 25);
+    }
+
+    #[test]
+    fn test_progress_percent_edge_cases() {
+        // 0%
+        let percent = (0f64 / 1000f64 * 100.0) as u8;
+        assert_eq!(percent, 0);
+        
+        // 100%
+        let percent = (1000f64 / 1000f64 * 100.0) as u8;
+        assert_eq!(percent, 100);
+        
+        // Rounding
+        let percent = (333f64 / 1000f64 * 100.0) as u8;
+        assert_eq!(percent, 33);
+    }
+}

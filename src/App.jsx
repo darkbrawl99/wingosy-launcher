@@ -218,6 +218,19 @@ function App() {
             }}
             onLaunch={handleLaunchGame}
             onToggleFavorite={handleToggleFavorite}
+            onGameUpdate={async (gameId) => {
+              // Refresh game data and update selected game
+              try {
+                const gamesData = await invoke("get_all_games");
+                setGames(gamesData);
+                const updated = gamesData.find(g => g.id === gameId);
+                if (updated) {
+                  setSelectedGame(updated);
+                }
+              } catch (err) {
+                console.error("Failed to refresh after download:", err);
+              }
+            }}
             rommToken={rommToken}
             rommUrl={rommUrl}
           />

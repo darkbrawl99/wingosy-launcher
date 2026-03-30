@@ -190,3 +190,181 @@ pub struct EmulatorPaths {
     pub xenia: Option<PathBuf>,
     pub mame: Option<PathBuf>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_app_config_default() {
+        let config = AppConfig::default();
+        assert!(config.romm.server_url.is_none());
+        assert!(config.library.scan_subdirectories);
+        assert_eq!(config.display.theme, Theme::Dark);
+        assert_eq!(config.display.grid_columns, 5);
+    }
+
+    #[test]
+    fn test_theme_default_is_dark() {
+        let theme = Theme::default();
+        assert_eq!(theme, Theme::Dark);
+    }
+
+    #[test]
+    fn test_cover_aspect_ratio_default() {
+        let ratio = CoverAspectRatio::default();
+        assert_eq!(ratio, CoverAspectRatio::Vertical);
+    }
+
+    #[test]
+    fn test_library_config_defaults() {
+        let lib = LibraryConfig::default();
+        assert!(lib.roms_directory.is_none());
+        assert!(lib.scan_subdirectories);
+        assert!(lib.auto_extract_archives);
+        assert!(!lib.show_hidden_games);
+    }
+
+    #[test]
+    fn test_display_config_defaults() {
+        let display = DisplayConfig::default();
+        assert_eq!(display.theme, Theme::Dark);
+        assert_eq!(display.grid_columns, 5);
+        assert!(display.show_platform_icons);
+        assert!(display.show_play_time);
+        assert_eq!(display.cover_aspect_ratio, CoverAspectRatio::Vertical);
+    }
+
+    #[test]
+    fn test_romm_config_defaults() {
+        let romm = RomMConfig::default();
+        assert!(romm.server_url.is_none());
+        assert!(romm.username.is_none());
+        assert!(romm.password.is_none());
+        assert!(romm.auth_token.is_none());
+        assert!(!romm.auto_sync);
+        assert!(!romm.sync_saves);
+    }
+
+    #[test]
+    fn test_emulator_paths_default() {
+        let paths = EmulatorPaths::default();
+        assert!(paths.retroarch.is_none());
+        assert!(paths.dolphin.is_none());
+        assert!(paths.pcsx2.is_none());
+        assert!(paths.eden.is_none());
+    }
+
+    #[test]
+    fn test_app_config_roms_dir_with_config() {
+        let mut config = AppConfig::default();
+        config.library.roms_directory = Some(PathBuf::from("C:/Games/ROMs"));
+        
+        assert_eq!(config.roms_dir(), PathBuf::from("C:/Games/ROMs"));
+    }
+
+    #[test]
+    fn test_app_config_roms_dir_default() {
+        let config = AppConfig::default();
+        // Should not panic and return some path
+        let roms_dir = config.roms_dir();
+        assert!(!roms_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = AppConfig::default();
+        let toml_str = toml::to_string(&config).expect("Should serialize");
+        assert!(toml_str.contains("[romm]"));
+        assert!(toml_str.contains("[library]"));
+        assert!(toml_str.contains("[display]"));
+    }
+
+    #[test]
+    fn test_config_deserialization() {
+        let toml_str = r#"
+            [romm]
+            server_url = "http://localhost:8080"
+            auto_sync = true
+            sync_saves = false
+            
+            [library]
+            scan_subdirectories = true
+            auto_extract_archives = false
+            show_hidden_games = true
+            
+            [display]
+            theme = "Dark"
+            grid_columns = 6
+            show_platform_icons = true
+            show_play_time = false
+            cover_aspect_ratio = "Square"
+            
+            [emulators]
+        "#;
+        
+        let config: AppConfig = toml::from_str(toml_str).expect("Should deserialize");
+        assert_eq!(config.romm.server_url, Some("http://localhost:8080".to_string()));
+        assert!(config.romm.auto_sync);
+        assert!(!config.library.auto_extract_archives);
+        assert!(config.library.show_hidden_games);
+        assert_eq!(config.display.grid_columns, 6);
+        assert_eq!(config.display.cover_aspect_ratio, CoverAspectRatio::Square);
+    }
+
+    #[test]
+    fn test_theme_equality() {
+        assert_eq!(Theme::Dark, Theme::Dark);
+        assert_eq!(Theme::Light, Theme::Light);
+        assert_ne!(Theme::Dark, Theme::Light);
+        assert_ne!(Theme::System, Theme::Dark);
+    }
+
+    #[test]
+    fn test_cover_aspect_ratio_equality() {
+        assert_eq!(CoverAspectRatio::Vertical, CoverAspectRatio::Vertical);
+        assert_ne!(CoverAspectRatio::Vertical, CoverAspectRatio::Square);
+        assert_ne!(CoverAspectRatio::Square, CoverAspectRatio::Horizontal);
+    }
+
+    #[test]
+    fn test_config_path_returns_path() {
+        let path = AppConfig::config_path();
+        assert!(path.is_ok());
+        let path = path.unwrap();
+        assert!(path.to_string_lossy().contains("config.toml"));
+    }
+
+    #[test]
+    fn test_data_dir_returns_path() {
+        let path = AppConfig::data_dir();
+        assert!(path.is_ok());
+    }
+
+    #[test]
+    fn test_cache_dir_returns_path() {
+        let path = AppConfig::cache_dir();
+        assert!(path.is_ok());
+    }
+
+    #[test]
+    fn test_covers_dir_returns_path() {
+        let path = AppConfig::covers_dir();
+        assert!(path.is_ok());
+        assert!(path.unwrap().to_string_lossy().contains("covers"));
+    }
+
+    #[test]
+    fn test_saves_dir_returns_path() {
+        let path = AppConfig::saves_dir();
+        assert!(path.is_ok());
+        assert!(path.unwrap().to_string_lossy().contains("saves"));
+    }
+
+    #[test]
+    fn test_emulators_dir_returns_path() {
+        let path = AppConfig::emulators_dir();
+        assert!(path.is_ok());
+        assert!(path.unwrap().to_string_lossy().contains("emulators"));
+    }
+}

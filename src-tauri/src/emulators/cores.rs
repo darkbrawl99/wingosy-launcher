@@ -123,3 +123,99 @@ pub fn is_core_installed(retroarch_path: &Path, core_filename: &str) -> bool {
     let cores_dir = get_cores_dir(retroarch_path);
     cores_dir.join(core_filename).exists()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_core_download_url_format() {
+        let url = core_download_url("mgba_libretro.dll");
+        assert_eq!(
+            url,
+            "https://buildbot.libretro.com/nightly/windows/x86_64/latest/mgba_libretro.dll.zip"
+        );
+    }
+
+    #[test]
+    fn test_core_download_url_various_cores() {
+        let test_cases = [
+            ("snes9x_libretro.dll", "snes9x_libretro.dll.zip"),
+            ("gambatte_libretro.dll", "gambatte_libretro.dll.zip"),
+            ("melonds_libretro.dll", "melonds_libretro.dll.zip"),
+        ];
+
+        for (core, expected_suffix) in test_cases {
+            let url = core_download_url(core);
+            assert!(url.ends_with(expected_suffix), "URL {} should end with {}", url, expected_suffix);
+            assert!(url.starts_with("https://buildbot.libretro.com/"), "URL should use HTTPS");
+        }
+    }
+
+    #[test]
+    fn test_get_cores_dir() {
+        let retroarch_path = Path::new("C:/RetroArch/retroarch.exe");
+        let cores_dir = get_cores_dir(retroarch_path);
+        assert_eq!(cores_dir, PathBuf::from("C:/RetroArch/cores"));
+    }
+
+    #[test]
+    fn test_get_cores_dir_nested() {
+        let retroarch_path = Path::new("C:/Games/Emulators/RetroArch/retroarch.exe");
+        let cores_dir = get_cores_dir(retroarch_path);
+        assert_eq!(cores_dir, PathBuf::from("C:/Games/Emulators/RetroArch/cores"));
+    }
+
+    #[test]
+    fn test_validate_zip_valid() {
+        use std::io::Write;
+        
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("test.zip");
+        
+        // Create a minimal valid ZIP file
+        let mut file = std::fs::File::create(&zip_path).unwrap();
+        // PK\x03\x04 is the ZIP local file header signature
+        file.write_all(&[0x50, 0x4B, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]).unwrap();
+        
+        assert!(validate_zip_file(&zip_path).is_ok());
+    }
+
+    #[test]
+    fn test_validate_zip_html_error() {
+        use std::io::Write;
+        
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("error.zip");
+        
+        // Write HTML content (simulating a 404 error page)
+        let mut file = std::fs::File::create(&zip_path).unwrap();
+        file.write_all(b"<!DOCTYPE html><html><body>404 Not Found</body></html>").unwrap();
+        
+        let result = validate_zip_file(&zip_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("HTML"));
+    }
+
+    #[test]
+    fn test_validate_zip_invalid_signature() {
+        use std::io::Write;
+        
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("invalid.zip");
+        
+        // Write invalid content
+        let mut file = std::fs::File::create(&zip_path).unwrap();
+        file.write_all(&[0x00, 0x00, 0x00, 0x00]).unwrap();
+        
+        let result = validate_zip_file(&zip_path);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("PK signature"));
+    }
+
+    #[test]
+    fn test_is_core_installed_nonexistent() {
+        let retroarch_path = Path::new("C:/NonExistent/retroarch.exe");
+        assert!(!is_core_installed(retroarch_path, "test_libretro.dll"));
+    }
+}

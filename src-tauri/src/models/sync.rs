@@ -122,4 +122,39 @@ mod tests {
         assert_eq!(SyncState::PendingDownload.to_db_str(), "pending_download");
         assert_eq!(SyncState::LocalOnly.to_db_str(), "local_only");
     }
+
+    #[test]
+    fn sync_state_icons_are_emoji() {
+        // Icons should be non-empty and valid display characters
+        assert!(!SyncState::LocalOnly.icon().is_empty());
+        assert!(!SyncState::Synced.icon().is_empty());
+        assert!(!SyncState::RemoteOnly.icon().is_empty());
+        assert!(!SyncState::Conflict.icon().is_empty());
+    }
+
+    #[test]
+    fn sync_state_descriptions_are_readable() {
+        assert_eq!(SyncState::LocalOnly.description(), "Local only");
+        assert_eq!(SyncState::Synced.description(), "Synced");
+        assert_eq!(SyncState::RemoteOnly.description(), "Remote only");
+        assert_eq!(SyncState::Conflict.description(), "Sync conflict");
+        assert_eq!(SyncState::PendingUpload.description(), "Pending upload");
+        assert_eq!(SyncState::PendingDownload.description(), "Pending download");
+    }
+
+    #[test]
+    fn sync_status_default_is_not_syncing() {
+        let status = SyncStatus::default();
+        assert!(!status.is_syncing);
+        assert!(status.last_sync.is_none());
+        assert_eq!(status.pending_uploads, 0);
+        assert_eq!(status.pending_downloads, 0);
+        assert_eq!(status.conflicts, 0);
+    }
+
+    #[test]
+    fn sync_state_default_is_local_only() {
+        let state = SyncState::default();
+        assert_eq!(state, SyncState::LocalOnly);
+    }
 }

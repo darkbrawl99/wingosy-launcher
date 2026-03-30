@@ -1,0 +1,2 @@
+# Mark vendored/generated files so GitHub doesn't count them in language stats
+e2e-webdriver/Driver_Notes/** linguist-vendored

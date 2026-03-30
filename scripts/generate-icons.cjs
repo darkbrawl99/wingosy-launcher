@@ -22,18 +22,31 @@ async function generateIcons() {
     console.log(`Generated ${name}`);
   }
   
-  // Generate ICO (Windows icon) - use 256x256 as base
-  const ico256 = await sharp(svg)
-    .resize(256, 256)
-    .png()
-    .toBuffer();
+  // Generate ICO (Windows icon) - needs multiple sizes in one file
+  // Dynamic import for ESM module
+  const { default: pngToIco } = await import('png-to-ico');
   
-  // For ICO we need to create a proper ICO file with multiple sizes
-  // Sharp can output to ico format on Windows
-  await sharp(svg)
-    .resize(256, 256)
-    .toFile(path.join(iconsDir, 'icon.ico'));
+  const icoSizes = [16, 24, 32, 48, 64, 128, 256];
+  const pngBuffers = [];
+  
+  for (const size of icoSizes) {
+    const pngPath = path.join(iconsDir, `temp_${size}.png`);
+    await sharp(svg)
+      .resize(size, size)
+      .png()
+      .toFile(pngPath);
+    pngBuffers.push(pngPath);
+  }
+  
+  // Create ICO from PNGs
+  const icoBuffer = await pngToIco(pngBuffers);
+  fs.writeFileSync(path.join(iconsDir, 'icon.ico'), icoBuffer);
   console.log('Generated icon.ico');
+  
+  // Clean up temp files
+  for (const pngPath of pngBuffers) {
+    fs.unlinkSync(pngPath);
+  }
   
   console.log('Icon generation complete!');
 }

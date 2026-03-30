@@ -14,16 +14,59 @@ mod scanner;
 
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-fn main() {
+fn setup_logging() -> Option<tracing_appender::non_blocking::WorkerGuard> {
+    // Get log directory (same as app data dir)
+    let log_dir = directories::ProjectDirs::from("com", "wingosy", "wingosy-launcher")
+        .map(|dirs| dirs.data_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    
+    // Create log directory if it doesn't exist
+    std::fs::create_dir_all(&log_dir).ok();
+    
+    // Set up rolling file appender (new file each day, keep 7 days)
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "wingosy.log");
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    
+    // Create file layer with more detailed output
+    let file_layer = tracing_subscriber::fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true);
+    
+    // Console layer (only in debug builds or when RUST_LOG is set)
+    let console_layer = tracing_subscriber::fmt::layer()
+        .with_target(false);
+    
+    // Set log level: debug for dev, info for release
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            if cfg!(debug_assertions) {
+                "wingosy_launcher=debug".into()
+            } else {
+                "wingosy_launcher=info".into()
+            }
+        });
+    
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "wingosy_launcher=info".into()),
-        )
+        .with(env_filter)
+        .with(file_layer)
+        .with(console_layer)
         .init();
+    
+    tracing::info!("Log file: {:?}", log_dir.join("wingosy.log"));
+    
+    Some(guard)
+}
+
+fn main() {
+    // Keep guard alive for entire app lifetime to ensure logs are flushed
+    let _log_guard = setup_logging();
 
     tracing::info!("Starting Wingosy Launcher v{}", env!("CARGO_PKG_VERSION"));
+    tracing::info!("Build type: {}", if cfg!(debug_assertions) { "debug" } else { "release" });
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -47,6 +90,12 @@ fn main() {
             commands::get_game_saves,
             commands::download_game_save,
             commands::upload_game_save,
+            commands::delete_local_rom,
+            commands::toggle_game_hidden,
+            commands::get_hidden_games,
+            commands::unhide_game,
+            commands::open_rom_location,
+            commands::refresh_game_metadata,
             commands::detect_emulators,
             commands::launch_emulator,
             commands::open_emulator_location,

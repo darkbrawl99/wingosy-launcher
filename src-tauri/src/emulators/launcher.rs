@@ -100,13 +100,6 @@ impl EmulatorLauncher {
 
         self.log_launch_to_file(&command);
 
-        // In debug builds, show command without launching (like Argosy)
-        if cfg!(debug_assertions) {
-            tracing::warn!("[DEBUG BUILD] Dry run - game not launched");
-            tracing::info!("[DEBUG BUILD] Command: {}", command.full_command);
-            return Ok(LaunchResult::DryRun { command });
-        }
-
         let start_time = Instant::now();
 
         let mut child = Command::new(&exe_path)

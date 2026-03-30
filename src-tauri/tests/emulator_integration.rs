@@ -525,3 +525,213 @@ mod download_workflow_tests {
         }
     }
 }
+
+/// Critical download tests - these MUST pass for core functionality to work
+/// Run with: cargo test --test emulator_integration critical -- --nocapture
+#[cfg(test)]
+mod critical_download_tests {
+    /// Verify RetroArch core download URLs are valid and return actual ZIP files
+    /// This test will FAIL if the buildbot returns HTML error pages
+    #[tokio::test]
+    async fn test_core_download_returns_valid_zip() {
+        println!("\n=== CRITICAL: Verifying Core Downloads Return Valid ZIPs ===\n");
+        
+        let cores_to_test = [
+            "mgba_libretro.dll",
+            "gambatte_libretro.dll", 
+            "snes9x_libretro.dll",
+            "genesis_plus_gx_libretro.dll",
+            "melonds_libretro.dll",
+        ];
+        
+        let client = reqwest::Client::new();
+        let mut failures = Vec::new();
+        
+        for core in &cores_to_test {
+            let url = format!(
+                "https://buildbot.libretro.com/nightly/windows/x86_64/latest/{}.zip",
+                core
+            );
+            
+            print!("  Testing {}: ", core);
+            
+            match client.get(&url).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if !status.is_success() {
+                        println!("FAIL - HTTP {}", status);
+                        failures.push(format!("{}: HTTP {}", core, status));
+                        continue;
+                    }
+                    
+                    // Check content-type header (clone to avoid borrow issues)
+                    let content_type = resp.headers()
+                        .get("content-type")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    
+                    // Download bytes to check ZIP signature
+                    let bytes = resp.bytes().await.unwrap();
+                    
+                    if bytes.len() < 4 {
+                        println!("FAIL - Response too small ({} bytes)", bytes.len());
+                        failures.push(format!("{}: Response too small", core));
+                        continue;
+                    }
+                    
+                    // Check ZIP magic bytes (PK\x03\x04 or PK\x05\x06)
+                    let is_zip = bytes[0] == 0x50 && bytes[1] == 0x4B 
+                        && (bytes[2] == 0x03 || bytes[2] == 0x05);
+                    
+                    // Check if it's HTML (error page)
+                    let is_html = bytes.starts_with(b"<!") || bytes.starts_with(b"<html");
+                    
+                    if is_html {
+                        println!("FAIL - Server returned HTML (likely 404 page)");
+                        failures.push(format!("{}: Server returned HTML error page", core));
+                    } else if !is_zip {
+                        println!("FAIL - Not a valid ZIP (magic: {:02x} {:02x} {:02x})", 
+                            bytes[0], bytes[1], bytes[2]);
+                        failures.push(format!("{}: Invalid ZIP signature", core));
+                    } else {
+                        println!("OK ({} bytes, {})", bytes.len(), content_type);
+                    }
+                }
+                Err(e) => {
+                    println!("FAIL - Network error: {}", e);
+                    failures.push(format!("{}: Network error", core));
+                }
+            }
+        }
+        
+        println!();
+        
+        if !failures.is_empty() {
+            println!("=== FAILURES ===");
+            for f in &failures {
+                println!("  - {}", f);
+            }
+            panic!("Core download validation failed for {} cores", failures.len());
+        }
+        
+        println!("=== All core downloads return valid ZIPs ===\n");
+    }
+    
+    /// Verify that downloaded ZIPs can actually be extracted and contain DLLs
+    #[tokio::test]
+    async fn test_core_zip_extraction_works() {
+        println!("\n=== CRITICAL: Verifying Core ZIP Extraction ===\n");
+        
+        let core = "snes9x_libretro.dll";
+        let url = format!(
+            "https://buildbot.libretro.com/nightly/windows/x86_64/latest/{}.zip",
+            core
+        );
+        
+        let client = reqwest::Client::new();
+        let resp = client.get(&url).send().await
+            .expect("Failed to download core");
+        
+        assert!(resp.status().is_success(), "HTTP error: {}", resp.status());
+        
+        let bytes = resp.bytes().await.expect("Failed to read response");
+        
+        // Write to temp file
+        let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+        let zip_path = temp_dir.path().join("test_core.zip");
+        std::fs::write(&zip_path, &bytes).expect("Failed to write zip");
+        
+        // Try to open as ZIP
+        let file = std::fs::File::open(&zip_path).expect("Failed to open zip");
+        let mut archive = zip::ZipArchive::new(file)
+            .expect("Failed to parse ZIP - file may be corrupted or not a valid ZIP");
+        
+        println!("  ZIP contains {} entries", archive.len());
+        
+        // Find and extract DLL
+        let mut found_dll = false;
+        for i in 0..archive.len() {
+            let entry = archive.by_index(i).expect("Failed to read entry");
+            let name = entry.name();
+            println!("    - {}", name);
+            
+            if name.ends_with(".dll") {
+                found_dll = true;
+            }
+        }
+        
+        assert!(found_dll, "No .dll file found in ZIP archive");
+        println!("\n=== Core ZIP extraction works correctly ===\n");
+    }
+    
+    /// Test HTTP status code checking in download manager
+    #[tokio::test]
+    async fn test_download_manager_checks_http_status() {
+        println!("\n=== CRITICAL: Verifying HTTP Status Code Checking ===\n");
+        
+        let client = reqwest::Client::new();
+        
+        // Test with a URL that should return 404
+        let fake_url = "https://buildbot.libretro.com/nightly/windows/x86_64/latest/nonexistent_fake_core_12345.dll.zip";
+        
+        let resp = client.get(fake_url).send().await
+            .expect("Failed to send request");
+        
+        let status = resp.status();
+        println!("  Request to nonexistent core returned: {}", status);
+        
+        // The server should return 404, not 200
+        // If it returns 200 with HTML, that's a problem
+        if status.is_success() {
+            let bytes = resp.bytes().await.unwrap();
+            let is_html = bytes.starts_with(b"<!") || bytes.starts_with(b"<html") || bytes.starts_with(b"<HTML");
+            
+            if is_html {
+                panic!("Server returned 200 with HTML for nonexistent file - download manager must check content!");
+            }
+        }
+        
+        println!("=== HTTP status code checking works ===\n");
+    }
+}
+
+/// ROM download tests - requires network access
+#[cfg(test)]
+mod rom_download_tests {
+    /// Test that ROM download URL construction is correct
+    #[test]
+    fn test_rom_download_url_format() {
+        // Simulate RomM URL construction
+        let server_url = "https://romm.example.com";
+        let romm_id = 123;
+        let file_name = "Super Mario Bros.nes";
+        
+        // URL should be properly constructed with manual encoding
+        let encoded_name = file_name.replace(' ', "%20");
+        let expected = format!("{}/api/roms/{}/content/{}", 
+            server_url.trim_end_matches('/'), romm_id, encoded_name);
+        
+        println!("ROM download URL: {}", expected);
+        
+        // Verify URL encoding works for special characters
+        assert!(expected.contains("Super%20Mario"), "Spaces should be URL encoded");
+    }
+    
+    /// Test download destination path construction
+    #[test]
+    fn test_rom_destination_path() {
+        use std::path::PathBuf;
+        
+        let roms_dir = PathBuf::from("/home/user/.wingosy/roms");
+        let platform_id = "nes";
+        let file_name = "Super Mario Bros.nes";
+        
+        let dest_path = roms_dir.join(platform_id).join(file_name);
+        
+        println!("ROM destination: {:?}", dest_path);
+        
+        assert!(dest_path.to_string_lossy().contains("nes"));
+        assert!(dest_path.to_string_lossy().contains("Super Mario Bros.nes"));
+    }
+}

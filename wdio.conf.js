@@ -38,6 +38,7 @@ export const config = {
   specs: [
     './e2e-webdriver/setup-wizard.spec.js',
     './e2e-webdriver/app.spec.js',
+    './e2e-webdriver/rom-download.spec.js',
     './e2e-webdriver/settings.spec.js',
     './e2e-webdriver/emulator-sensing.spec.js',
     './e2e-webdriver/emulator-download.spec.js',

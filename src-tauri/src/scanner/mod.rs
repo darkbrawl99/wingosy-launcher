@@ -215,6 +215,44 @@ mod tests {
     }
 
     #[test]
+    fn test_clean_rom_name_preserves_core_title() {
+        assert_eq!(clean_rom_name("Super Mario Bros"), "Super Mario Bros");
+        assert_eq!(clean_rom_name("Sonic the Hedgehog"), "Sonic the Hedgehog");
+    }
+
+    #[test]
+    fn test_clean_rom_name_removes_region_codes() {
+        assert_eq!(clean_rom_name("Game (USA)"), "Game");
+        assert_eq!(clean_rom_name("Game (Europe)"), "Game");
+        assert_eq!(clean_rom_name("Game (Japan)"), "Game");
+        assert_eq!(clean_rom_name("Game (U) (E)"), "Game");
+    }
+
+    #[test]
+    fn test_clean_rom_name_removes_revision_info() {
+        assert_eq!(clean_rom_name("Game [Rev A]"), "Game");
+        assert_eq!(clean_rom_name("Game [!]"), "Game");
+        assert_eq!(clean_rom_name("Game [h1]"), "Game");
+    }
+
+    #[test]
+    fn test_clean_rom_name_removes_curly_braces() {
+        assert_eq!(clean_rom_name("Game {pirate}"), "Game");
+    }
+
+    #[test]
+    fn test_clean_rom_name_normalizes_whitespace() {
+        assert_eq!(clean_rom_name("Game   Extra    Spaces"), "Game Extra Spaces");
+        assert_eq!(clean_rom_name("  Leading Trailing  "), "Leading Trailing");
+    }
+
+    #[test]
+    fn test_clean_rom_name_replaces_underscores() {
+        assert_eq!(clean_rom_name("My_Cool_Game"), "My Cool Game");
+        assert_eq!(clean_rom_name("Game_Name_(USA)"), "Game Name");
+    }
+
+    #[test]
     fn test_detect_multi_disc() {
         let (name, disc) = detect_multi_disc("Final Fantasy VII (Disc 1)").unwrap();
         assert_eq!(name, "Final Fantasy VII");
@@ -223,5 +261,56 @@ mod tests {
         let (name, disc) = detect_multi_disc("Metal Gear Solid CD2").unwrap();
         assert_eq!(name, "Metal Gear Solid");
         assert_eq!(disc, 2);
+    }
+
+    #[test]
+    fn test_detect_multi_disc_various_formats() {
+        // (Disc X)
+        let (name, disc) = detect_multi_disc("Game (Disc 3)").unwrap();
+        assert_eq!(name, "Game");
+        assert_eq!(disc, 3);
+        
+        // (CD X)
+        let (name, disc) = detect_multi_disc("Game (CD 2)").unwrap();
+        assert_eq!(name, "Game");
+        assert_eq!(disc, 2);
+        
+        // Disc X (no parens)
+        let (name, disc) = detect_multi_disc("Game Disc 4").unwrap();
+        assert_eq!(name, "Game");
+        assert_eq!(disc, 4);
+    }
+
+    #[test]
+    fn test_detect_multi_disc_case_insensitive() {
+        let (_, disc) = detect_multi_disc("Game (DISC 1)").unwrap();
+        assert_eq!(disc, 1);
+        
+        let (_, disc) = detect_multi_disc("Game (disc 2)").unwrap();
+        assert_eq!(disc, 2);
+    }
+
+    #[test]
+    fn test_detect_multi_disc_returns_none_for_single() {
+        assert!(detect_multi_disc("Regular Game Name").is_none());
+        assert!(detect_multi_disc("Game (USA)").is_none());
+    }
+
+    #[test]
+    fn test_detect_multi_disc_d_suffix() {
+        let result = detect_multi_disc("Final Fantasy VIII D2");
+        assert!(result.is_some());
+        let (name, disc) = result.unwrap();
+        assert_eq!(disc, 2);
+        assert!(name.contains("Final Fantasy VIII"));
+    }
+
+    #[test]
+    fn test_rom_scanner_new() {
+        let platforms = vec![
+            Platform::new("snes", "Super Nintendo", vec![".sfc", ".smc"]),
+        ];
+        let scanner = RomScanner::new(platforms);
+        assert_eq!(scanner.platforms.len(), 1);
     }
 }
