@@ -134,12 +134,17 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_games_favorite ON games(is_favorite);
             CREATE INDEX IF NOT EXISTS idx_games_last_played ON games(last_played_at);
             CREATE INDEX IF NOT EXISTS idx_games_romm_id ON games(romm_id);
-            CREATE INDEX IF NOT EXISTS idx_games_sync_dirty ON games(sync_dirty);
             "#,
         )
         .context("Failed to initialize database schema")?;
 
         Self::run_migrations(&conn)?;
+
+        // Create index on sync_dirty after migrations have added the column
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_games_sync_dirty ON games(sync_dirty)",
+            [],
+        ).ok(); // Ignore error if index already exists
 
         Ok(())
     }

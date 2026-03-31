@@ -45,15 +45,19 @@ fn extract_7z(archive: &Path, dest_dir: &Path) -> Result<PathBuf> {
 }
 
 pub fn find_executable(dir: &Path, exe_names: &[&str]) -> Option<PathBuf> {
+    // First check direct path
     for exe in exe_names {
         let direct = dir.join(exe);
         if direct.exists() {
             return Some(direct);
         }
+    }
 
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+    // Then check one level deep (common for archives with a root folder)
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                for exe in exe_names {
                     let nested = entry.path().join(exe);
                     if nested.exists() {
                         return Some(nested);
@@ -62,5 +66,34 @@ pub fn find_executable(dir: &Path, exe_names: &[&str]) -> Option<PathBuf> {
             }
         }
     }
-    None
+
+    // Finally, do a recursive search up to 3 levels deep
+    fn search_recursive(dir: &Path, exe_names: &[&str], depth: u8) -> Option<PathBuf> {
+        if depth > 3 {
+            return None;
+        }
+        
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                
+                if path.is_file() {
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        for exe in exe_names {
+                            if name.eq_ignore_ascii_case(exe) {
+                                return Some(path);
+                            }
+                        }
+                    }
+                } else if path.is_dir() {
+                    if let Some(found) = search_recursive(&path, exe_names, depth + 1) {
+                        return Some(found);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    search_recursive(dir, exe_names, 0)
 }

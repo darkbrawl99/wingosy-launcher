@@ -864,6 +864,37 @@ pub async fn get_all_emulators() -> Result<Vec<EmulatorInfo>, String> {
     detect_emulators().await
 }
 
+/// Fetch the latest Dolphin download URL from their update API
+async fn fetch_dolphin_download_url() -> anyhow::Result<String> {
+    #[derive(serde::Deserialize)]
+    struct DolphinArtifact {
+        system: String,
+        url: String,
+    }
+    
+    #[derive(serde::Deserialize)]
+    struct DolphinUpdate {
+        artifacts: Vec<DolphinArtifact>,
+    }
+    
+    let client = reqwest::Client::new();
+    let response = client
+        .get("https://dolphin-emu.org/update/latest/beta")
+        .header("User-Agent", "Wingosy-Launcher")
+        .send()
+        .await?;
+    
+    let update: DolphinUpdate = response.json().await?;
+    
+    // Find Windows x64 artifact
+    let artifact = update.artifacts.iter()
+        .find(|a| a.system == "Windows x64")
+        .ok_or_else(|| anyhow::anyhow!("No Windows x64 artifact found"))?;
+    
+    tracing::info!("[Emulators] Found Dolphin download: {}", artifact.url);
+    Ok(artifact.url.clone())
+}
+
 #[tauri::command]
 pub async fn download_emulator(emulator_id: String) -> Result<String, String> {
     tracing::info!("[Emulators] Downloading emulator: {}", emulator_id);
@@ -912,15 +943,29 @@ pub async fn download_emulator(emulator_id: String) -> Result<String, String> {
         
         (asset.browser_download_url.clone(), asset.name.clone(), fmt.to_string())
     } else if let Some(direct_url) = &emu.download_url {
-        // Direct download URL (e.g., RetroArch buildbot)
-        tracing::debug!("[Emulators] Using direct download URL: {}", direct_url);
-        
-        let filename = direct_url.split('/').last().unwrap_or("emulator.zip").to_string();
-        let fmt = emu.archive_format.as_deref().unwrap_or(
-            if filename.ends_with(".7z") { "7z" } else { "zip" }
-        );
-        
-        (direct_url.clone(), filename, fmt.to_string())
+        // Check for special Dolphin API URL
+        if direct_url == "dolphin-api://latest" {
+            tracing::debug!("[Emulators] Fetching Dolphin download URL from API");
+            
+            let dolphin_url = fetch_dolphin_download_url().await
+                .map_err(|e| {
+                    tracing::error!("[Emulators] Failed to fetch Dolphin URL: {}", e);
+                    e.to_string()
+                })?;
+            
+            let filename = dolphin_url.split('/').last().unwrap_or("dolphin.7z").to_string();
+            (dolphin_url, filename, "7z".to_string())
+        } else {
+            // Direct download URL (e.g., RetroArch buildbot)
+            tracing::debug!("[Emulators] Using direct download URL: {}", direct_url);
+            
+            let filename = direct_url.split('/').last().unwrap_or("emulator.zip").to_string();
+            let fmt = emu.archive_format.as_deref().unwrap_or(
+                if filename.ends_with(".7z") { "7z" } else { "zip" }
+            );
+            
+            (direct_url.clone(), filename, fmt.to_string())
+        }
     } else {
         tracing::error!("[Emulators] No download source configured for {}", emulator_id);
         return Err("Emulator has no download URL or GitHub repo configured".to_string());

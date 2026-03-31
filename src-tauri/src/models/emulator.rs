@@ -81,8 +81,9 @@ pub fn default_emulators() -> Vec<Emulator> {
             is_installed: false,
             github_repo: None,
             asset_pattern: None,
-            download_url: Some("https://dolphin-emu.org/download/".into()),
-            archive_format: None,
+            // Special URL marker - will be resolved via Dolphin's update API
+            download_url: Some("dolphin-api://latest".into()),
+            archive_format: Some("7z".into()),
         },
         Emulator {
             id: "pcsx2".into(),
@@ -95,7 +96,8 @@ pub fn default_emulators() -> Vec<Emulator> {
             is_retroarch: false,
             is_installed: false,
             github_repo: Some("PCSX2/pcsx2".into()),
-            asset_pattern: Some("(?i)pcsx2.*windows.*x64.*\\.7z$".into()),
+            // Exclude symbols files with negative lookahead pattern
+            asset_pattern: Some("(?i)pcsx2.*windows.*x64.*Qt\\.7z$".into()),
             download_url: None,
             archive_format: Some("7z".into()),
         },
