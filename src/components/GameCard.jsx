@@ -9,6 +9,7 @@ import Chip from "@mui/material/Chip";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import CloudIcon from "@mui/icons-material/Cloud";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
@@ -43,6 +44,11 @@ export default function GameCard({ game, onClick, onToggleFavorite, onLaunch }) 
   const platformColor = PLATFORM_COLORS[game.platform_id] || "#4a90e2";
   const coverSrc = getCoverSrc(game.cover_path);
   const showCover = coverSrc && !imgError;
+  
+  // Check if game is playable (has local file or is not remote-only)
+  const isRemoteOnly = game.sync_state === "remote_only" || game.sync_state === "RemoteOnly";
+  const hasLocalFile = game.local_file_path && game.local_file_path.length > 0;
+  const canPlay = hasLocalFile || (!isRemoteOnly && game.source !== "RomM");
 
   const syncBadge = (() => {
     if (game.sync_state === "remote_only") {
@@ -205,19 +211,35 @@ export default function GameCard({ game, onClick, onToggleFavorite, onLaunch }) 
             <FavoriteBorderIcon fontSize="small" />
           )}
         </IconButton>
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            onLaunch();
-          }}
-          sx={{
-            bgcolor: "rgba(74,144,226,0.8)",
-            "&:hover": { bgcolor: "rgba(74,144,226,1)" },
-          }}
-        >
-          <PlayArrowIcon fontSize="small" />
-        </IconButton>
+        {canPlay ? (
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              onLaunch();
+            }}
+            sx={{
+              bgcolor: "rgba(74,144,226,0.8)",
+              "&:hover": { bgcolor: "rgba(74,144,226,1)" },
+            }}
+          >
+            <PlayArrowIcon fontSize="small" />
+          </IconButton>
+        ) : isRemoteOnly ? (
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick(); // Navigate to details to download
+            }}
+            sx={{
+              bgcolor: "rgba(255,152,0,0.8)",
+              "&:hover": { bgcolor: "rgba(255,152,0,1)" },
+            }}
+          >
+            <CloudDownloadIcon fontSize="small" />
+          </IconButton>
+        ) : null}
       </Box>
     </Card>
   );
