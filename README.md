@@ -32,4 +32,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
-GPL-3.0
+GPL-3.0.
