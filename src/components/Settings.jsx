@@ -14,6 +14,8 @@ import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import Collapse from "@mui/material/Collapse";
+import Switch from "@mui/material/Switch";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import CloudIcon from "@mui/icons-material/Cloud";
 import FolderIcon from "@mui/icons-material/Folder";
@@ -47,7 +49,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
 import normalizeUrl from "../utils/normalizeUrl";
 
-export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRommConnect, onLibraryChange }) {
+export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRommConnect, onLibraryChange, onBigPictureChange, onFullscreenChange }) {
   const [config, setConfig] = useState(null);
   const [rommUrl, setRommUrl] = useState(rommUrlProp || "");
   const [rommUsername, setRommUsername] = useState("");
@@ -74,6 +76,10 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   // Platform default emulators
   const [platformDefaults, setPlatformDefaults] = useState({});
   const [platforms, setPlatforms] = useState([]);
+  
+  // Big Picture / fullscreen UI flags
+  const [bigPictureEnabled, setBigPictureEnabled] = useState(false);
+  const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -90,7 +96,18 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       setRommUrl(cfg.romm?.server_url || rommUrlProp || "");
       setRommUsername(cfg.romm?.username || "");
       setRomsDirectory(cfg.library?.roms_directory || "");
+      setBigPictureEnabled(Boolean(cfg.display?.big_picture));
+      setFullscreenEnabled(Boolean(cfg.display?.fullscreen));
     } catch {}
+  }
+
+  async function persistDisplayFlags(nextBigPicture, nextFullscreen) {
+    const cfg = config || (await invoke("get_config"));
+    cfg.display = cfg.display || {};
+    cfg.display.big_picture = Boolean(nextBigPicture);
+    cfg.display.fullscreen = Boolean(nextFullscreen);
+    await invoke("save_config", { config: cfg });
+    setConfig(cfg);
   }
 
   async function loadEmulators() {
@@ -386,6 +403,59 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       </Button>
 
       <Typography variant="h4" gutterBottom>Settings</Typography>
+
+      {/* UI */}
+      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+        <Typography variant="h6" gutterBottom>UI</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Big Picture is a fullscreen, 10-foot-friendly interface for couch play.
+        </Typography>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={bigPictureEnabled}
+                onChange={async (e) => {
+                  const next = e.target.checked;
+                  setBigPictureEnabled(next);
+                  // If enabling Big Picture, default fullscreen on.
+                  const nextFs = next ? true : fullscreenEnabled;
+                  if (next) setFullscreenEnabled(nextFs);
+                  await persistDisplayFlags(next, nextFs);
+                  // Notify parent of Big Picture change
+                  if (onBigPictureChange) {
+                    onBigPictureChange(next);
+                  } else if (next && onLibraryChange) {
+                    // Fallback: trigger library refresh so App.jsx picks up the new display flags
+                    onLibraryChange();
+                  }
+                }}
+              />
+            }
+            label="Big Picture mode"
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={fullscreenEnabled}
+                disabled={!bigPictureEnabled}
+                onChange={async (e) => {
+                  const nextFs = e.target.checked;
+                  setFullscreenEnabled(nextFs);
+                  await persistDisplayFlags(bigPictureEnabled, nextFs);
+                  if (onFullscreenChange) {
+                    onFullscreenChange(nextFs);
+                  }
+                }}
+              />
+            }
+            label="Fullscreen (Big Picture)"
+          />
+          <Typography variant="caption" color="text.secondary">
+            Tip: Press F11 to toggle fullscreen. Press Esc to go back.
+          </Typography>
+        </Box>
+      </Paper>
 
       {/* RomM */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>

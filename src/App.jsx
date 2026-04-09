@@ -5,7 +5,10 @@ import Library from "./components/Library";
 import GameDetails from "./components/GameDetails";
 import Settings from "./components/Settings";
 import SetupWizard from "./components/SetupWizard";
+import BigPictureApp from "./bigpicture/BigPictureApp";
 import { invoke } from "@tauri-apps/api/tauri";
+import { appWindow } from "@tauri-apps/api/window";
+import { setFullscreenReliable } from "./windowFullscreen";
 
 const DRAWER_WIDTH = 260;
 
@@ -21,6 +24,8 @@ function App() {
   const [error, setError] = useState(null);
   const [rommToken, setRommToken] = useState(null);
   const [rommUrl, setRommUrl] = useState("");
+  const [bigPictureEnabled, setBigPictureEnabled] = useState(false);
+  const [bigPictureFullscreen, setBigPictureFullscreen] = useState(false);
 
   useEffect(() => {
     checkFirstRun();
@@ -73,6 +78,8 @@ function App() {
         if (cfg.romm?.auth_token) {
           setRommToken(cfg.romm.auth_token);
         }
+        setBigPictureEnabled(Boolean(cfg.display?.big_picture));
+        setBigPictureFullscreen(Boolean(cfg.display?.fullscreen));
       } catch {
         // config may not exist yet
       }
@@ -101,6 +108,24 @@ function App() {
     setRommUrl(url);
     setRommToken(token);
   }
+
+  useEffect(() => {
+    // Global hotkey: F11 toggles fullscreen.
+    function onKeyDown(e) {
+      if (e.key !== "F11") return;
+      e.preventDefault();
+      (async () => {
+        try {
+          const next = !(await appWindow.isFullscreen());
+          await setFullscreenReliable(next);
+        } catch {
+          // ignore
+        }
+      })();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   async function handleToggleFavorite(gameId) {
     try {
@@ -171,6 +196,22 @@ function App() {
       <SetupWizard
         onComplete={handleSetupComplete}
         onRommConnect={handleRommConnect}
+      />
+    );
+  }
+
+  if (bigPictureEnabled) {
+    return (
+      <BigPictureApp
+        rommToken={rommToken}
+        rommUrl={rommUrl}
+        onRommConnect={handleRommConnect}
+        onExit={() => {
+          setBigPictureEnabled(false);
+          setBigPictureFullscreen(false);
+          loadData();
+        }}
+        requestedFullscreen={bigPictureFullscreen}
       />
     );
   }

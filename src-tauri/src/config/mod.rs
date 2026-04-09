@@ -142,6 +142,12 @@ pub struct DisplayConfig {
     pub show_platform_icons: bool,
     pub show_play_time: bool,
     pub cover_aspect_ratio: CoverAspectRatio,
+    /// Enable 10-foot UI layout (Steam Big Picture-style).
+    #[serde(default)]
+    pub big_picture: bool,
+    /// Request fullscreen window while in Big Picture mode.
+    #[serde(default)]
+    pub fullscreen: bool,
 }
 
 impl Default for DisplayConfig {
@@ -152,6 +158,8 @@ impl Default for DisplayConfig {
             show_platform_icons: true,
             show_play_time: true,
             cover_aspect_ratio: CoverAspectRatio::Vertical,
+            big_picture: false,
+            fullscreen: false,
         }
     }
 }
