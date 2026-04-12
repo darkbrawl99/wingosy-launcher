@@ -1575,13 +1575,13 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
             <FormControlLabel
               value="beta"
               control={<Radio size="small" />}
-              label="Beta — prerelease builds (tag contains “beta”)"
+              label='Beta — prerelease builds (tag contains "beta")'
               disabled={!autoUpdateEnabled}
             />
             <FormControlLabel
               value="nightly"
               control={<Radio size="small" />}
-              label="Nightly — automated prerelease builds (tag contains “nightly”)"
+              label='Nightly — automated prerelease builds (tag contains "nightly")'
               disabled={!autoUpdateEnabled}
             />
           </RadioGroup>
