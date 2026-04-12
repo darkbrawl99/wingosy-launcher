@@ -1,5 +1,8 @@
 # Stable channel: Windows installers attached to a **non-prerelease** GitHub Release.
 #
+# If GitHub Actions is disabled, ship from an existing tag manually — see CONTRIBUTING.md
+# → *Manual GitHub release (Actions disabled)*.
+#
 # The git tag sets the app version (e.g. v2.0.0 → 2.0.0): CI runs `scripts/set-version.mjs`
 # so installers match the tag. This is a MAJOR-style release relative to prior betas/nightlies
 # (you normally tag after `npm run version:bump -- release` on main, or set the tag to the

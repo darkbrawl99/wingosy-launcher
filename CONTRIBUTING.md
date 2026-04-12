@@ -75,11 +75,33 @@ The in-app **Updates** settings use GitHub’s API to compare your build to the 
 
 | Channel | GitHub source | CI workflow |
 |--------|----------------|-------------|
-| **Stable** | Latest **non-prerelease** release (`/releases/latest`) | [`.github/workflows/release.yml`](.github/workflows/release.yml) — tag `v*` **without** `beta` or `nightly` in the name (e.g. `v0.2.0`) |
+| **Stable** | Latest **non-prerelease** release (`/releases/latest`) | [`.github/workflows/release.yml`](.github/workflows/release.yml) — tag `v*` **without** `beta` or `nightly` (e.g. `v0.2.0`), **or** manual upload if Actions are off (below) |
 | **Beta** | Newest **prerelease** whose tag contains `beta` and not `nightly` | [`.github/workflows/beta.yml`](.github/workflows/beta.yml) — manual dispatch; tags like `beta-<run_id>` |
 | **Nightly** | Newest **prerelease** whose tag contains `nightly` | [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml) — push a tag matching `nightly*` (e.g. `nightly-2026-04-11`), **or** weekday schedule / manual dispatch (`nightly-<run_id>`) |
 
 Pre-release workflows set **`prerelease: true`** so they do not replace **stable** on `/releases/latest`.
+
+### Manual GitHub release (Actions disabled)
+
+If **GitHub Actions** is turned off, tags alone do not attach installers. Use an **existing tag** (for example you already pushed **`v0.0.1`** or **`nightly-v0.0.1`**) and publish the release by hand.
+
+1. **Match the app version to the tag** (on the commit you are building, usually `main`):
+   - Stable tag **`vX.Y.Z`** → run `npm run version:set -- X.Y.Z` so `package.json`, `Cargo.toml`, `tauri.conf.json`, and lockfiles agree with the binary.
+2. **Build locally (Windows):**
+   ```bash
+   npm ci
+   npm run tauri build
+   ```
+3. **Collect artifacts** (paths vary slightly by Tauri; look under):
+   - `src-tauri/target/release/bundle/nsis/` — setup `.exe`
+   - `src-tauri/target/release/bundle/msi/` — `.msi` if generated  
+   The main binary is also under `src-tauri/target/release/` (e.g. `Wingosy Launcher.exe`).
+4. **On GitHub:** **Releases** → **Draft a new release** → **Choose a tag** → pick the tag you already pushed (do not create a duplicate tag).
+5. **Stable:** leave **“Set as a pre-release”** unchecked so `/releases/latest` and the in-app **Stable** channel see it.
+6. **Nightly / Beta:** check **pre-release**, and use a tag whose name contains **`nightly`** or **`beta`** (and not `nightly` inside a beta track), matching the table above.
+7. **Upload** the installer(s), publish the release.
+
+The in-app updater compares your running build to **GitHub Releases** metadata; it does not require Actions to have produced the assets, only that the **release + tag + files** exist.
 
 ### App versioning (automated in CI)
 
