@@ -1,7 +1,11 @@
-# Build Windows installers and attach them to a GitHub Release.
+# Stable channel: Windows installers attached to a **non-prerelease** GitHub Release.
 #
-# Recommended: push an annotated tag after bumping versions (see CONTRIBUTING / repo docs).
-# Optional: Actions → Release → Run workflow → enter an existing tag (e.g. v0.2.0).
+# The git tag sets the app version (e.g. v2.0.0 → 2.0.0): CI runs `scripts/set-version.mjs`
+# so installers match the tag. This is a MAJOR-style release relative to prior betas/nightlies
+# (you normally tag after `npm run version:bump -- release` on main, or set the tag to the
+# desired X.0.0 manually — see CONTRIBUTING.md).
+#
+# Do not use this workflow for nightly/beta tags — those are built by nightly.yml / beta.yml.
 
 name: Release
 
@@ -18,6 +22,8 @@ on:
 
 jobs:
   build:
+    # Exclude pre-release tracks from the stable pipeline (tag still matches v*).
+    if: ${{ !contains(github.ref_name, 'nightly') && !contains(github.ref_name, 'beta') }}
     permissions:
       contents: write
 
@@ -49,6 +55,14 @@ jobs:
 
       - name: Enable Corepack (pinned npm from package.json)
         run: corepack enable
+
+      - name: Sync app version from release tag
+        shell: bash
+        run: |
+          set -e
+          TAG="${{ env.RELEASE_TAG }}"
+          VER="${TAG#v}"
+          node scripts/set-version.mjs "$VER"
 
       - name: Setup Rust
         uses: dtolnay/rust-action@stable

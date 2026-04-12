@@ -13,7 +13,7 @@ describe('Emulator Download - UI Elements', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should show emulators section with backend data', async () => {
@@ -58,7 +58,7 @@ describe('Emulator Download - Direct URL (RetroArch)', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should find RetroArch in the list', async () => {
@@ -133,7 +133,7 @@ describe('Emulator Download - GitHub Release (mGBA)', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should find mGBA in the list', async () => {
@@ -179,7 +179,7 @@ describe('Emulator Download - Multiple Emulators', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should track installed count correctly', async () => {
@@ -219,7 +219,7 @@ describe('RetroArch Cores Download', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should show cores section after RetroArch is installed', async () => {
@@ -283,7 +283,7 @@ describe('Emulator Path Configuration', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should update config after emulator install', async () => {
@@ -304,7 +304,7 @@ describe('Error Handling - Downloads', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should handle download states gracefully', async () => {

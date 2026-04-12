@@ -51,7 +51,7 @@ describe('GBA Game Launch - Prerequisites', () => {
   });
 
   it('should have mGBA or RetroArch installed for GBA games', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Check installed emulators
@@ -319,7 +319,7 @@ describe('GBA Game Launch - With Emulator', function() {
   });
 
   it('should ensure mGBA is installed', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Check if mGBA is installed

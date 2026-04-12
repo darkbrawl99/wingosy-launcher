@@ -9,6 +9,12 @@ pub struct AppConfig {
     pub library: LibraryConfig,
     pub display: DisplayConfig,
     pub emulators: EmulatorPaths,
+    /// Immersive-mode audio: UI sound volume, ambient BGM (Argosy-style).
+    #[serde(default)]
+    pub audio: AudioConfig,
+    /// Auto-update preferences (GitHub release check).
+    #[serde(default)]
+    pub updater: UpdaterConfig,
 }
 
 impl Default for AppConfig {
@@ -18,6 +24,84 @@ impl Default for AppConfig {
             library: LibraryConfig::default(),
             display: DisplayConfig::default(),
             emulators: EmulatorPaths::default(),
+            audio: AudioConfig::default(),
+            updater: UpdaterConfig::default(),
+        }
+    }
+}
+
+/// Background music and UI sound levels for Immersive mode (see Argosy launcher sounds).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioConfig {
+    /// 0–100; scales bundled Argosy UI clips.
+    #[serde(default = "default_ui_sounds_volume")]
+    pub ui_sounds_volume: u8,
+    #[serde(default)]
+    pub ambient_enabled: bool,
+    /// 0–100
+    #[serde(default = "default_ambient_volume")]
+    pub ambient_volume: u8,
+    /// Audio file path, or directory when `ambient_is_folder` is true.
+    pub ambient_path: Option<String>,
+    #[serde(default)]
+    pub ambient_is_folder: bool,
+    #[serde(default)]
+    pub ambient_shuffle: bool,
+}
+
+fn default_ui_sounds_volume() -> u8 {
+    80
+}
+
+fn default_ambient_volume() -> u8 {
+    35
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self {
+            ui_sounds_volume: default_ui_sounds_volume(),
+            ambient_enabled: false,
+            ambient_volume: default_ambient_volume(),
+            ambient_path: None,
+            ambient_is_folder: false,
+            ambient_shuffle: false,
+        }
+    }
+}
+
+/// Which GitHub release track to compare against ([`UpdaterConfig::channel`]).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    Beta,
+    Nightly,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdaterConfig {
+    /// Compare against the selected channel when the app starts (desktop shell).
+    #[serde(default = "default_true")]
+    pub check_on_startup: bool,
+    /// When true, pre-release channels (beta / nightly) are available and future builds may install updates automatically.
+    #[serde(default)]
+    pub auto_update_enabled: bool,
+    #[serde(default)]
+    pub channel: UpdateChannel,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for UpdaterConfig {
+    fn default() -> Self {
+        Self {
+            check_on_startup: true,
+            auto_update_enabled: false,
+            channel: UpdateChannel::Stable,
         }
     }
 }
@@ -149,6 +233,12 @@ pub struct DisplayConfig {
     /// Request OS fullscreen while Immersive mode is active.
     #[serde(default)]
     pub fullscreen: bool,
+    /// Argosy-style UI feedback sounds (bundled assets from upstream `argosy-launcher` `res/raw`).
+    #[serde(default)]
+    pub ui_sounds_enabled: bool,
+    /// When true, RetroAchievements integration is enabled app-wide (when implemented).
+    #[serde(default)]
+    pub retroachievements_enabled: bool,
 }
 
 impl Default for DisplayConfig {
@@ -161,6 +251,8 @@ impl Default for DisplayConfig {
             cover_aspect_ratio: CoverAspectRatio::Vertical,
             big_picture: false,
             fullscreen: false,
+            ui_sounds_enabled: false,
+            retroachievements_enabled: false,
         }
     }
 }
@@ -214,6 +306,11 @@ mod tests {
         assert!(config.library.scan_subdirectories);
         assert_eq!(config.display.theme, Theme::Dark);
         assert_eq!(config.display.grid_columns, 5);
+        assert_eq!(config.audio.ui_sounds_volume, 80);
+        assert!(!config.audio.ambient_enabled);
+        assert!(config.updater.check_on_startup);
+        assert!(!config.updater.auto_update_enabled);
+        assert_eq!(config.updater.channel, UpdateChannel::Stable);
     }
 
     #[test]
@@ -247,6 +344,19 @@ mod tests {
         assert_eq!(display.cover_aspect_ratio, CoverAspectRatio::Vertical);
         assert!(!display.big_picture);
         assert!(!display.fullscreen);
+        assert!(!display.ui_sounds_enabled);
+        assert!(!display.retroachievements_enabled);
+    }
+
+    #[test]
+    fn test_audio_config_defaults() {
+        let a = AudioConfig::default();
+        assert_eq!(a.ui_sounds_volume, 80);
+        assert!(!a.ambient_enabled);
+        assert_eq!(a.ambient_volume, 35);
+        assert!(a.ambient_path.is_none());
+        assert!(!a.ambient_is_folder);
+        assert!(!a.ambient_shuffle);
     }
 
     #[test]
@@ -292,6 +402,7 @@ mod tests {
         assert!(toml_str.contains("[romm]"));
         assert!(toml_str.contains("[library]"));
         assert!(toml_str.contains("[display]"));
+        assert!(toml_str.contains("[audio]"));
     }
 
     #[test]

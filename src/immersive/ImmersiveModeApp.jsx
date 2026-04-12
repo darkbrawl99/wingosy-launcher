@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Settings from "../components/Settings";
+import AmbientAudioPlayer from "./AmbientAudioPlayer";
 import ImmersiveLibrary from "./ImmersiveLibrary";
 import ImmersiveGameDetails from "./ImmersiveGameDetails";
 import { invoke } from "@tauri-apps/api/tauri";
@@ -25,11 +26,14 @@ export default function ImmersiveModeApp({
     big_picture: true,
     fullscreen: requestedFullscreen,
   }));
+  const [audioCfg, setAudioCfg] = useState(null);
+  const [retroachievementsEnabled, setRetroachievementsEnabled] = useState(false);
   const hasLoadedOnce = useRef(false);
 
-  const platformNameById = useMemo(() => {
+  // Match desktop `GameDetails` Chip: platform?.name || game.platform_id (not short_name-first / uppercase).
+  const platformDisplayNameById = useMemo(() => {
     const map = new Map();
-    for (const [p] of platforms) map.set(p.id, p.short_name || p.name || p.id);
+    for (const [p] of platforms) map.set(p.id, p.name || p.id);
     return map;
   }, [platforms]);
 
@@ -69,6 +73,8 @@ export default function ImmersiveModeApp({
         big_picture: Boolean(cfg.display?.big_picture),
         fullscreen: Boolean(cfg.display?.fullscreen),
       });
+      setAudioCfg(cfg.audio || {});
+      setRetroachievementsEnabled(Boolean(cfg.display?.retroachievements_enabled));
     } catch (err) {
       setError(err?.message || String(err));
     } finally {
@@ -151,9 +157,20 @@ export default function ImmersiveModeApp({
     setView("details");
   }
 
+  let main = null;
   if (view === "settings") {
-    return (
-      <Box sx={{ flex: 1, minHeight: 0, overflow: "auto", bgcolor: "background.default" }}>
+    main = (
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          bgcolor: "background.default",
+        }}
+      >
         <Settings
           onBack={() => {
             setView("library");
@@ -174,13 +191,10 @@ export default function ImmersiveModeApp({
         />
       </Box>
     );
-  }
-
-  if (view === "details" && selectedGame) {
-    const platformLabel = (platformNameById.get(selectedGame.platform_id) || selectedGame.platform_id || "")
-      .toString()
-      .toUpperCase();
-    return (
+  } else if (view === "details" && selectedGame) {
+    const platformLabel =
+      platformDisplayNameById.get(selectedGame.platform_id) || selectedGame.platform_id || "";
+    main = (
       <ImmersiveGameDetails
         game={selectedGame}
         platformLabel={platformLabel}
@@ -197,21 +211,37 @@ export default function ImmersiveModeApp({
         }}
         rommToken={rommToken}
         rommUrl={rommUrl}
+        retroachievementsEnabled={retroachievementsEnabled}
+      />
+    );
+  } else {
+    main = (
+      <ImmersiveLibrary
+        loading={loading}
+        error={error}
+        games={games}
+        selectedIndex={selectedIndex}
+        onSelectedIndexChange={setSelectedIndex}
+        onSelectGame={handleSelectGame}
+        onExitImmersive={handleExit}
+        onOpenSettings={() => setView("settings")}
       />
     );
   }
 
   return (
-    <ImmersiveLibrary
-      loading={loading}
-      error={error}
-      games={games}
-      platforms={platforms}
-      selectedIndex={selectedIndex}
-      onSelectedIndexChange={setSelectedIndex}
-      onSelectGame={handleSelectGame}
-      onExitImmersive={handleExit}
-      onOpenSettings={() => setView("settings")}
-    />
+    <Box
+      sx={{
+        flex: 1,
+        minHeight: 0,
+        minWidth: 0,
+        display: "flex",
+        flexDirection: "column",
+        bgcolor: "background.default",
+      }}
+    >
+      <AmbientAudioPlayer audio={audioCfg} />
+      <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{main}</Box>
+    </Box>
   );
 }

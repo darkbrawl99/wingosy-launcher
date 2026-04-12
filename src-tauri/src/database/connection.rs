@@ -161,6 +161,36 @@ impl Database {
                 .context("Failed to add sync_dirty column")?;
         }
 
+        let col = |name: &str| -> Result<bool, rusqlite::Error> {
+            let mut stmt = conn.prepare(
+                "SELECT COUNT(*) FROM pragma_table_info('games') WHERE name = ?1",
+            )?;
+            let n: i32 = stmt.query_row([name], |row| row.get(0))?;
+            Ok(n > 0)
+        };
+
+        if !col("library_status")? {
+            conn.execute(
+                "ALTER TABLE games ADD COLUMN library_status TEXT",
+                [],
+            )
+            .context("Failed to add library_status column")?;
+        }
+        if !col("personal_rating")? {
+            conn.execute(
+                "ALTER TABLE games ADD COLUMN personal_rating INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .context("Failed to add personal_rating column")?;
+        }
+        if !col("personal_difficulty")? {
+            conn.execute(
+                "ALTER TABLE games ADD COLUMN personal_difficulty INTEGER NOT NULL DEFAULT 0",
+                [],
+            )
+            .context("Failed to add personal_difficulty column")?;
+        }
+
         Ok(())
     }
 

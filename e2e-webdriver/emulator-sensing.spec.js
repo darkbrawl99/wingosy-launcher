@@ -16,7 +16,7 @@ describe('Emulator Detection - Initial Scan', () => {
   });
 
   it('should trigger emulator detection when opening Settings', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // The installed count chip should be visible
@@ -31,7 +31,7 @@ describe('Emulator Detection - Initial Scan', () => {
   });
 
   it('should categorize detected emulators correctly', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Check for different emulator states
@@ -49,7 +49,7 @@ describe('Emulator Detection - Initial Scan', () => {
   });
 
   it('should show refresh button for re-scanning', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     
     // Find the refresh button near Emulators heading
     const refreshBtn = await $('[data-testid="RefreshIcon"]')
@@ -75,7 +75,7 @@ describe('Emulator Detection - Install Types', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(1500);
   });
 
@@ -144,7 +144,7 @@ describe('Emulator Detection - Actions', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(1500);
   });
 
@@ -215,7 +215,7 @@ describe('Emulator Detection - Re-scan', () => {
   });
 
   it('should refresh emulator list when Refresh button is clicked', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(1500);
     
     // Get initial count
@@ -264,7 +264,7 @@ describe('Emulator Detection - Managed Emulators', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(1500);
   });
 
@@ -298,7 +298,7 @@ describe('mGBA Emulator - Download and Detection', function() {
   });
 
   it('should install mGBA if not already installed', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Check if mGBA is already installed
@@ -359,7 +359,7 @@ describe('mGBA Emulator - Download and Detection', function() {
   });
 
   it('should detect mGBA after installation', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(3000);
     
     // Look for mGBA with success icon
@@ -384,7 +384,7 @@ describe('mGBA Emulator - Download and Detection', function() {
   });
 
   it('should show mGBA install path', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Look for mGBA.exe path

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
@@ -7,6 +7,7 @@ import Chip from "@mui/material/Chip";
 import Paper from "@mui/material/Paper";
 import Divider from "@mui/material/Divider";
 import Alert from "@mui/material/Alert";
+import { alpha } from "@mui/material/styles";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
@@ -38,8 +39,19 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import StarIcon from "@mui/icons-material/Star";
 import GroupsIcon from "@mui/icons-material/Groups";
+import MemoryIcon from "@mui/icons-material/Memory";
+import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
+import AlbumIcon from "@mui/icons-material/Album";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import TagIcon from "@mui/icons-material/Tag";
+import FolderSpecialIcon from "@mui/icons-material/FolderSpecial";
+import StarOutlineIcon from "@mui/icons-material/StarOutline";
+import GameScreenshotsSection from "./game/GameScreenshotsSection";
+import GameAchievementsSection from "./game/GameAchievementsSection";
+import CollectionPickerDialog from "./game/CollectionPickerDialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
+import { tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
 
 function isLocalPath(path) {
   if (!path) return false;
@@ -52,6 +64,28 @@ function getCoverSrc(coverPath) {
     return convertFileSrc(coverPath);
   }
   return coverPath;
+}
+
+function getMediaSrc(url) {
+  if (!url) return null;
+  if (isLocalPath(url)) {
+    return convertFileSrc(url);
+  }
+  return url;
+}
+
+function formatLastPlayed(iso) {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  } catch {
+    return null;
+  }
 }
 
 export default function GameDetails({
@@ -81,6 +115,29 @@ export default function GameDetails({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [actionStatus, setActionStatus] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [retroachievementsEnabled, setRetroachievementsEnabled] = useState(false);
+  const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
+  const [collections, setCollections] = useState([]);
+  const [comingSoon, setComingSoon] = useState({ open: false, title: "", detail: "" });
+  const [ratingsDialogOpen, setRatingsDialogOpen] = useState(false);
+  const savesSectionRef = useRef(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cfg = await invoke("get_config");
+        if (!cancelled) {
+          setRetroachievementsEnabled(Boolean(cfg.display?.retroachievements_enabled));
+        }
+      } catch {
+        if (!cancelled) setRetroachievementsEnabled(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const platform = platforms.find(([p]) => p.id === game.platform_id)?.[0];
   const playHours = Math.floor(game.play_time_minutes / 60);
@@ -248,17 +305,80 @@ export default function GameDetails({
     }
   }
 
-  return (
-    <Box sx={{ p: 3, maxWidth: 900, mx: "auto" }}>
-      <Button
-        startIcon={<ArrowBackIcon />}
-        onClick={onBack}
-        sx={{ mb: 2 }}
-        color="inherit"
-      >
-        Back to Library
-      </Button>
+  function scrollToSaves() {
+    setMenuAnchor(null);
+    savesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
+  async function openAddToCollection() {
+    setMenuAnchor(null);
+    try {
+      const cols = await invoke("get_collections");
+      setCollections(cols);
+      setCollectionDialogOpen(true);
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handlePickCollection(collectionId) {
+    try {
+      await invoke("add_game_to_collection", { collectionId, gameId: game.id });
+      setActionStatus({ type: "success", message: "Added to collection." });
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  const screenshots = Array.isArray(game.screenshot_paths)
+    ? game.screenshot_paths
+    : [];
+  const lastPlayedLabel = formatLastPlayed(game.last_played_at);
+
+  return (
+    <Box sx={{ maxWidth: 900, mx: "auto" }}>
+      <Box
+        sx={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          flexWrap: "wrap",
+          py: 1.5,
+          px: 2,
+          mb: 2,
+          mx: { xs: -1, sm: 0 },
+          borderRadius: 2,
+          bgcolor: (t) => alpha(t.palette.background.default, 0.92),
+          backdropFilter: "blur(10px)",
+          borderBottom: 1,
+          borderColor: "divider",
+        }}
+      >
+        <Button
+          {...tauriNoDragProps()}
+          data-argosy-sound="back"
+          startIcon={<ArrowBackIcon />}
+          onClick={onBack}
+          color="inherit"
+          sx={{ ...tauriNoDragSx, flexShrink: 0 }}
+        >
+          Back to Library
+        </Button>
+        <Box
+          {...tauriDragRegionProps()}
+          sx={{
+            flex: 1,
+            minWidth: 80,
+            minHeight: 36,
+            ...tauriDragRegionSx,
+          }}
+        />
+      </Box>
+
+      <Box sx={{ px: { xs: 2, sm: 3 }, pb: 3 }}>
       {/* Hero Cover */}
       {showCover && (
         <Box
@@ -333,7 +453,11 @@ export default function GameDetails({
               )}
               {game.sync_state && game.sync_state !== "local_only" && game.sync_state !== "LocalOnly" && (
                 <Chip
-                  label={game.sync_state === "remote_only" || game.sync_state === "RemoteOnly" ? "Cloud Only" : "Synced"}
+                  label={
+                    game.sync_state === "remote_only" || game.sync_state === "RemoteOnly"
+                      ? "Cloud only"
+                      : "Downloaded, not synced"
+                  }
                   color={game.sync_state === "remote_only" || game.sync_state === "RemoteOnly" ? "info" : "success"}
                   size="small"
                   variant="outlined"
@@ -372,6 +496,135 @@ export default function GameDetails({
               open={Boolean(menuAnchor)}
               onClose={() => setMenuAnchor(null)}
             >
+              {game.romm_id && rommToken && rommUrl && (
+                <MenuItem onClick={scrollToSaves}>
+                  <ListItemIcon>
+                    <SaveIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Manage cached saves"
+                    secondary="RomM cloud saves"
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+              )}
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setRatingsDialogOpen(true);
+                }}
+              >
+                <ListItemIcon>
+                  <StarOutlineIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Ratings & status"
+                  secondary="Local backlog / playing (coming soon)"
+                  secondaryTypographyProps={{ variant: "caption" }}
+                />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Change emulator",
+                    detail: "Per-game emulators will use your platform default from Settings → Emulators until overrides land.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <SportsEsportsIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Change emulator" secondary="From Settings" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Change core",
+                    detail: "RetroArch core selection per game is planned. Install cores from Settings → Emulators.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <MemoryIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Change core" secondary="RetroArch" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Updates / DLC",
+                    detail: "Not wired to RomM yet.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <SystemUpdateIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Updates / DLC" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Select disc",
+                    detail: "Multi-disc selection will be added for supported platforms.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <AlbumIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Select disc" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Select variant",
+                    detail: "ROM variant selection is planned.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <SwapHorizIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Select variant" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem disabled>
+                <ListItemIcon>
+                  <TagIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Title ID" secondary="Not available" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem onClick={openAddToCollection}>
+                <ListItemIcon>
+                  <FolderSpecialIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Add to collection" secondary="Manual collections" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              {game.romm_id && rommToken && rommUrl && (
+                <MenuItem onClick={handleRefreshMetadata} disabled={refreshing}>
+                  <ListItemIcon>
+                    <RefreshIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={refreshing ? "Refreshing..." : "Refresh game data"}
+                    secondary="From RomM"
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+              )}
+
+              <Divider />
+
               {/* Open ROM Location - only if has local file */}
               {hasLocalFile && (
                 <MenuItem onClick={handleOpenLocation}>
@@ -381,17 +634,7 @@ export default function GameDetails({
                   <ListItemText>Open ROM Location</ListItemText>
                 </MenuItem>
               )}
-              
-              {/* Refresh Metadata - only for RomM games */}
-              {game.romm_id && rommToken && rommUrl && (
-                <MenuItem onClick={handleRefreshMetadata} disabled={refreshing}>
-                  <ListItemIcon>
-                    <RefreshIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText>{refreshing ? "Refreshing..." : "Refresh Metadata"}</ListItemText>
-                </MenuItem>
-              )}
-              
+
               {/* Hide Game */}
               <MenuItem onClick={handleHideGame}>
                 <ListItemIcon>
@@ -399,7 +642,7 @@ export default function GameDetails({
                 </ListItemIcon>
                 <ListItemText>Hide Game</ListItemText>
               </MenuItem>
-              
+
               {/* Delete Download - only if has local file */}
               {hasLocalFile && (
                 <MenuItem onClick={() => { setMenuAnchor(null); setDeleteDialogOpen(true); }} sx={{ color: "error.main" }}>
@@ -513,6 +756,12 @@ export default function GameDetails({
           </Alert>
         )}
 
+        <GameScreenshotsSection
+          urls={screenshots}
+          getMediaSrc={getMediaSrc}
+          isRommGame={Boolean(game.romm_id)}
+        />
+
         <Divider sx={{ my: 3 }} />
 
         <Box sx={{ display: "flex", gap: 4, mb: 3, flexWrap: "wrap" }}>
@@ -520,7 +769,7 @@ export default function GameDetails({
             <AccessTimeIcon color="action" />
             <Box>
               <Typography variant="caption" color="text.secondary">
-                Play Time
+                Play time
               </Typography>
               <Typography variant="body2" fontWeight={600}>
                 {playTimeStr}
@@ -532,7 +781,7 @@ export default function GameDetails({
             <SportsEsportsIcon color="action" />
             <Box>
               <Typography variant="caption" color="text.secondary">
-                Times Played
+                Times played
               </Typography>
               <Typography variant="body2" fontWeight={600}>
                 {game.play_count}
@@ -540,12 +789,26 @@ export default function GameDetails({
             </Box>
           </Box>
 
+          {lastPlayedLabel && (
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <CalendarTodayIcon color="action" />
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Last played
+                </Typography>
+                <Typography variant="body2" fontWeight={600}>
+                  {lastPlayedLabel}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
           {game.release_year && (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CalendarTodayIcon color="action" />
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Release Year
+                  Release year
                 </Typography>
                 <Typography variant="body2" fontWeight={600}>
                   {game.release_year}
@@ -559,7 +822,7 @@ export default function GameDetails({
               <StarIcon color="action" />
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  IGDB rating
+                  IGDB aggregated rating
                 </Typography>
                 <Typography variant="body2" fontWeight={600}>
                   {Number(game.user_rating).toFixed(1)} / 100
@@ -582,6 +845,8 @@ export default function GameDetails({
             </Box>
           )}
         </Box>
+
+        <GameAchievementsSection gameName={game.name} retroAchievementsEnabled={retroachievementsEnabled} />
 
         {/* Developer / Publisher */}
         {(game.developer || game.publisher) && (
@@ -633,7 +898,9 @@ export default function GameDetails({
         {/* Save Sync Section */}
         {game.romm_id && rommToken && rommUrl && (
           <>
-            <Divider sx={{ my: 3 }} />
+            <Box ref={savesSectionRef}>
+              <Divider sx={{ my: 3 }} />
+            </Box>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
               <SaveIcon color="primary" />
               <Typography variant="h6">Saves</Typography>
@@ -698,6 +965,42 @@ export default function GameDetails({
           </>
         )}
       </Paper>
+
+      <CollectionPickerDialog
+        open={collectionDialogOpen}
+        onClose={() => setCollectionDialogOpen(false)}
+        collections={collections}
+        onPick={handlePickCollection}
+        gameName={game.name}
+      />
+
+      <Dialog open={ratingsDialogOpen} onClose={() => setRatingsDialogOpen(false)}>
+        <DialogTitle>Ratings & status</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Per-game backlog and ratings will appear here in a future update. Use favorites and play stats for now.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRatingsDialogOpen(false)} variant="contained">
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={comingSoon.open} onClose={() => setComingSoon((s) => ({ ...s, open: false }))}>
+        <DialogTitle>{comingSoon.title}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{comingSoon.detail}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setComingSoon((s) => ({ ...s, open: false }))} variant="contained">
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      </Box>
     </Box>
   );
 }

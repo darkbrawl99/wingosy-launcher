@@ -77,27 +77,28 @@ The in-app **Updates** settings use GitHub’s API to compare your build to the 
 |--------|----------------|-------------|
 | **Stable** | Latest **non-prerelease** release (`/releases/latest`) | [`.github/workflows/release.yml`](.github/workflows/release.yml) — tag `v*` **without** `beta` or `nightly` in the name (e.g. `v0.2.0`) |
 | **Beta** | Newest **prerelease** whose tag contains `beta` and not `nightly` | [`.github/workflows/beta.yml`](.github/workflows/beta.yml) — manual dispatch; tags like `beta-<run_id>` |
-| **Nightly** | Newest **prerelease** whose tag contains `nightly` | [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml) — push a tag matching `nightly*` (e.g. `nightly-0.0.1`, `nightly-2026-04-11`), **or** weekday schedule / manual dispatch (`nightly-<run_id>`) |
+| **Nightly** | Newest **prerelease** whose tag contains `nightly` | [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml) — push a tag matching `nightly*` (e.g. `nightly-2026-04-11`), **or** weekday schedule / manual dispatch (`nightly-<run_id>`) |
 
-Pre-release workflows set **`prerelease: true`** so they do not replace **stable** on `/releases/latest`. Bump `package.json` / `Cargo.toml` / `tauri.conf.json` before **stable** `v*` tags as you do today.
+Pre-release workflows set **`prerelease: true`** so they do not replace **stable** on `/releases/latest`.
 
-### Publishing a nightly (e.g. first `0.0.1`)
+### App versioning (automated in CI)
 
-Installer and updater metadata use the version in **`package.json`**, **`src-tauri/Cargo.toml`**, and **`src-tauri/tauri.conf.json`** — keep them in sync (`main` is already **0.0.1**).
+The app semver is **`MAJOR.MINOR.PATCH`** in **`package.json`**, mirrored to **`package-lock.json`**, **`src-tauri/Cargo.toml`**, **`src-tauri/tauri.conf.json`**, and **`src-tauri/Cargo.lock`** via:
 
-1. **Merge [`nightly.yml`](.github/workflows/nightly.yml) to `main`** on GitHub (without it, nothing runs for this channel).
-2. **Tag and push** — any tag matching `nightly*` triggers a build from that tag:
+```bash
+npm run version:set -- 1.2.3    # node scripts/set-version.mjs — set all files to an exact version
+npm run version:bump -- nightly # PATCH + 1
+npm run version:bump -- beta    # MINOR + 1, PATCH = 0 (resets “nightly” counter)
+npm run version:bump -- release # MAJOR + 1, MINOR = 0, PATCH = 0 (resets beta and nightly counters)
+```
 
-   ```bash
-   git checkout main
-   git pull origin main
-   git tag nightly-0.0.1
-   git push origin nightly-0.0.1
-   ```
+| Workflow | What happens to the version |
+|----------|------------------------------|
+| **Nightly** (cron or **Run workflow** on `main`) | Bump **PATCH**, build, then **commit** back to `main` with `[skip ci]`. |
+| **Beta** (manual dispatch on `main`) | Bump **MINOR**, **PATCH → 0**, build, then commit to `main`. |
+| **Stable** ([`release.yml`](.github/workflows/release.yml) on tag `vX.Y.Z`) | **No semver math in CI** — the tag defines the version; the workflow runs `version:set` so binaries match **`vX.Y.Z`**. Before tagging, run **`version:bump -- release`** on **`main`** so **`main`** reflects the stable line you are shipping. |
 
-3. **Actions** → **Nightly** → open the run for `nightly-0.0.1`; when it finishes, **Releases** shows a new prerelease. The in-app **Nightly** update track picks the newest prerelease whose tag contains `nightly`.
-
-**No tag:** **Actions** → **Nightly** → **Run workflow** (builds `main`, publishes as `nightly-<run_id>`). The weekday cron does the same.
+Pushing a **`nightly*`** tag builds that ref **without** running the bump script (uses whatever versions are in that snapshot). Prefer schedule / **Run workflow** on `main` for automatic PATCH bumps.
 
 ## Project Structure
 

@@ -1,0 +1,21 @@
+/**
+ * Frameless window dragging (WebView2 / Chromium).
+ * MUI `sx` alone is not always enough; these rules apply reliably after HMR.
+ */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+}
+
+[data-tauri-no-drag],
+[data-tauri-no-drag] * {
+  -webkit-app-region: no-drag;
+}

@@ -331,7 +331,7 @@ describe('Coverage: RomM Integration', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('romm');
     await browser.pause(1500);
   });
 
@@ -380,7 +380,7 @@ describe('Coverage: Library Path Management', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('library');
     await browser.pause(1500);
   });
 
@@ -486,7 +486,7 @@ describe('Coverage: Keyboard Navigation', () => {
   });
 
   it('should close dialogs with Escape key', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(1000);
     
     // Try opening a menu and closing with Escape

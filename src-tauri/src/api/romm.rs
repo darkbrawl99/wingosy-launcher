@@ -131,7 +131,9 @@ impl RomMClient {
         let items_raw = raw["items"].as_array()
             .context("ROMs response missing 'items' array")?;
 
+        let base = self.base_url.clone();
         let items: Vec<RomMRom> = items_raw.iter().filter_map(|v| {
+            let screenshots = screenshot_urls_from_rom_json(v, &base);
             Some(RomMRom {
                 id: v["id"].as_i64()? as i32,
                 platform_id: v["platform_id"].as_i64().unwrap_or(0) as i32,
@@ -149,6 +151,7 @@ impl RomMClient {
                 igdb_metadata: v.get("igdb_metadata")
                     .filter(|m| m.is_object() && !m.as_object().unwrap().is_empty())
                     .and_then(|m| serde_json::from_value(m.clone()).ok()),
+                screenshots,
             })
         }).collect();
 
@@ -187,6 +190,7 @@ impl RomMClient {
         let raw: serde_json::Value = serde_json::from_str(&text)
             .context(format!("ROM response is not valid JSON: {}", &text[..text.len().min(100)]))?;
         
+        let screenshots = screenshot_urls_from_rom_json(&raw, &self.base_url);
         let rom = RomMRom {
             id: raw["id"].as_i64().context("ROM missing 'id' field")? as i32,
             platform_id: raw["platform_id"].as_i64().unwrap_or(0) as i32,
@@ -204,6 +208,7 @@ impl RomMClient {
             igdb_metadata: raw.get("igdb_metadata")
                 .filter(|m| m.is_object() && !m.as_object().unwrap().is_empty())
                 .and_then(|m| serde_json::from_value(m.clone()).ok()),
+            screenshots,
         };
         
         tracing::debug!("[RomM] Fetched ROM: {} (fs_name={})", rom.name, rom.fs_name);
@@ -418,6 +423,9 @@ pub struct RomMRom {
     pub url_cover: Option<String>,
     #[serde(default)]
     pub igdb_metadata: Option<IgdbMetadata>,
+    /// Resolved from RomM JSON (`screenshots`, `igdb_screenshots`, etc.); not serde-filled from list API.
+    #[serde(default)]
+    pub screenshots: Vec<String>,
 }
 
 impl RomMRom {
@@ -503,10 +511,13 @@ impl RomMRom {
             genres,
             player_count,
             cover_path,
-            screenshot_paths: Vec::new(),
+            screenshot_paths: self.screenshots,
             is_favorite: false,
             is_hidden: false,
             user_rating: rating,
+            library_status: None,
+            personal_rating: 0,
+            personal_difficulty: 0,
             last_played_at: None,
             play_count: 0,
             play_time_minutes: 0,
@@ -514,6 +525,77 @@ impl RomMRom {
             local_file_path: None,
         }
     }
+}
+
+fn absolutize_media_url(path: &str, server_url: &str) -> String {
+    let p = path.trim();
+    if p.starts_with("http://") || p.starts_with("https://") {
+        return p.to_string();
+    }
+    let base = server_url.trim_end_matches('/');
+    if p.starts_with('/') {
+        format!("{}{}", base, p)
+    } else {
+        format!("{}/{}", base, p)
+    }
+}
+
+/// Collect screenshot / artwork URLs from a RomM `/api/roms` or `/api/roms/{id}` JSON object.
+///
+/// RomM’s OpenAPI exposes the on-disk / resolved gallery as **`merged_screenshots`** (same field Argosy
+/// and the RomM web UI use). Older payloads may use `screenshots`, `url_screenshots`, etc.
+fn screenshot_urls_from_rom_json(raw: &serde_json::Value, server_url: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut push = |u: &str| {
+        let s = absolutize_media_url(u, server_url);
+        if !s.is_empty() && !out.contains(&s) {
+            out.push(s);
+        }
+    };
+
+    // Primary: RomM 4.x SimpleRomSchema / DetailedRomSchema — cached files + IGDB URLs merged server-side
+    if let Some(arr) = raw.get("merged_screenshots").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(s) = item.as_str() {
+                push(s);
+            }
+        }
+    }
+
+    // Raw DB-style URL list (IGDB), when present alongside or instead of merged
+    if let Some(arr) = raw.get("url_screenshots").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(s) = item.as_str() {
+                push(s);
+            }
+        }
+    }
+
+    // Cached files on the RomM host (relative paths under resources), if API exposes them without merge
+    if let Some(arr) = raw.get("path_screenshots").and_then(|v| v.as_array()) {
+        for item in arr {
+            if let Some(s) = item.as_str() {
+                push(s);
+            }
+        }
+    }
+
+    // Legacy / alternate keys (objects or strings)
+    for key in &["screenshots", "igdb_screenshots", "arts"] {
+        if let Some(arr) = raw.get(*key).and_then(|v| v.as_array()) {
+            for item in arr {
+                if let Some(s) = item.as_str() {
+                    push(s);
+                } else if let Some(u) = item.get("url").and_then(|x| x.as_str()) {
+                    push(u);
+                } else if let Some(u) = item.get("url_cover").and_then(|x| x.as_str()) {
+                    push(u);
+                }
+            }
+        }
+    }
+
+    out
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -579,6 +661,26 @@ mod tests {
     }
 
     #[test]
+    fn screenshot_urls_read_merged_screenshots_like_romm_openapi() {
+        let raw = serde_json::json!({
+            "merged_screenshots": [
+                "/assets/romm/resources/1/2/a.png",
+                "https://images.igdb.com/igdb/image/upload/t_screenshot_huge/xy.jpg"
+            ]
+        });
+        let urls = screenshot_urls_from_rom_json(&raw, "https://romm.example.com");
+        assert_eq!(urls.len(), 2);
+        assert_eq!(
+            urls[0],
+            "https://romm.example.com/assets/romm/resources/1/2/a.png"
+        );
+        assert_eq!(
+            urls[1],
+            "https://images.igdb.com/igdb/image/upload/t_screenshot_huge/xy.jpg"
+        );
+    }
+
+    #[test]
     fn rom_has_cover_when_url_present() {
         let rom = RomMRom {
             id: 1,
@@ -591,6 +693,7 @@ mod tests {
             summary: None,
             url_cover: Some("https://example.com/cover.jpg".into()),
             igdb_metadata: None,
+            screenshots: vec![],
         };
         assert!(rom.has_cover());
     }
@@ -608,6 +711,7 @@ mod tests {
             summary: None,
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         assert!(!rom.has_cover());
     }
@@ -625,6 +729,7 @@ mod tests {
             summary: None,
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         assert!(rom.genres().is_empty());
     }
@@ -650,6 +755,7 @@ mod tests {
                 companies: None,
                 game_modes: None,
             }),
+            screenshots: vec![],
         };
         let genres = rom.genres();
         assert_eq!(genres.len(), 2);
@@ -677,6 +783,7 @@ mod tests {
                 companies: None,
                 game_modes: None,
             }),
+            screenshots: vec![],
         };
         assert_eq!(rom.aggregated_rating(), Some(85.5));
     }
@@ -702,6 +809,7 @@ mod tests {
                 companies: None,
                 game_modes: None,
             }),
+            screenshots: vec![],
         };
         assert_eq!(rom.aggregated_rating(), Some(75.0));
     }
@@ -719,6 +827,7 @@ mod tests {
             summary: Some("Fast hedgehog".into()),
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com");
@@ -743,6 +852,7 @@ mod tests {
             summary: None,
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com");
@@ -762,6 +872,7 @@ mod tests {
             summary: None,
             url_cover: Some("/media/covers/test.jpg".into()),
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com/");
@@ -781,6 +892,7 @@ mod tests {
             summary: None,
             url_cover: Some("https://cdn.example.com/cover.jpg".into()),
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com");
@@ -849,6 +961,7 @@ mod tests {
             summary: None,
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com");
@@ -877,6 +990,7 @@ mod tests {
                 companies: Some(vec!["Dev Studio".into(), "Pub Co".into()]),
                 game_modes: Some(vec!["Single player".into(), "Co-operative".into()]),
             }),
+            screenshots: vec![],
         };
         let game = rom.into_game("https://romm.example.com");
         assert_eq!(game.developer.as_deref(), Some("Dev Studio"));
@@ -899,6 +1013,7 @@ mod tests {
             summary: None,
             url_cover: None,
             igdb_metadata: None,
+            screenshots: vec![],
         };
         
         let game = rom.into_game("https://romm.example.com");

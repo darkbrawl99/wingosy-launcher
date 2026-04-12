@@ -84,6 +84,7 @@ fn main() {
             commands::scan_directory,
             commands::get_config,
             commands::save_config,
+            commands::list_ambient_audio_files,
             commands::connect_romm,
             commands::connect_romm_with_token,
             commands::sync_romm_library,
@@ -101,7 +102,9 @@ fn main() {
             commands::launch_emulator,
             commands::open_emulator_location,
             commands::get_game_details,
+            commands::update_game_personal_fields,
             commands::get_collections,
+            commands::add_game_to_collection,
             commands::search_games,
             commands::get_all_emulators,
             commands::download_emulator,
@@ -112,6 +115,8 @@ fn main() {
             commands::set_platform_default_emulator,
             commands::get_platform_default_emulators,
             commands::get_emulators_for_platform,
+            commands::get_app_version,
+            commands::check_for_app_update,
         ])
         .setup(|_app| {
             let db = database::Database::open()

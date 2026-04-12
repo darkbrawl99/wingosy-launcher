@@ -1,8 +1,8 @@
 /**
  * Tauri WebDriver E2E Tests - Settings
- * 
- * Tests all settings page functionality: RomM, emulators, paths, scanning.
- * Requires setup wizard to be completed first.
+ *
+ * Smoke coverage for navigation and major sections (see TESTING.md).
+ * Deeper flows live in emulator-download, retroarch-cores, rom-download, etc.
  */
 
 import { ensureMainApp, goToSettings } from './helpers.js';
@@ -34,6 +34,45 @@ describe('Settings Page - Navigation', () => {
     const settingsHeading = await $('h4=Settings').isDisplayed().catch(() => false);
     expect(settingsHeading).toBe(false);
   });
+
+  it('should show General content by default (Immersive toggle)', async () => {
+    const row = await $('[data-testid="immersive-mode-row"]');
+    await expect(row).toBeDisplayed({ timeout: 10000 });
+  });
+});
+
+describe('Settings Page - Appearance, Sound, Updates (smoke)', () => {
+  before(async () => {
+    await ensureMainApp();
+  });
+
+  it('should display Appearance section', async () => {
+    await goToSettings('appearance');
+    const heading = await $('h6=Appearance');
+    await expect(heading).toBeDisplayed();
+  });
+
+  it('should display Sound (Immersive) section', async () => {
+    await goToSettings('sound');
+    const heading = await $('*=Sound (Immersive)');
+    await expect(heading).toBeDisplayed();
+  });
+
+  it('should display Updates section', async () => {
+    await goToSettings('updates');
+    const heading = await $('h6=Updates');
+    await expect(heading).toBeDisplayed();
+    const checkBtn = await $('[data-testid="check-for-updates-button"]');
+    await expect(checkBtn).toBeDisplayed();
+  });
+
+  it('should display Platform defaults beside Emulators', async () => {
+    await goToSettings('emulators');
+    const emuHeading = await $('h6=Emulators');
+    await expect(emuHeading).toBeDisplayed();
+    const defaultsHeading = await $('h6=Platform defaults');
+    await expect(defaultsHeading).toBeDisplayed();
+  });
 });
 
 describe('Settings Page - RomM Section', () => {
@@ -42,7 +81,7 @@ describe('Settings Page - RomM Section', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('romm');
   });
 
   it('should display RomM section', async () => {
@@ -67,7 +106,7 @@ describe('Settings Page - Library Section', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('library');
   });
 
   it('should display Library section', async () => {
@@ -90,7 +129,7 @@ describe('Settings Page - Emulators Section', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should display Emulators section', async () => {
@@ -163,7 +202,7 @@ describe('Settings Page - RetroArch Cores', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
   });
 
   it('should show cores section if RetroArch is installed', async () => {
@@ -190,7 +229,7 @@ describe('Settings - Configuration Persistence', () => {
   });
 
   it('should persist settings across navigation', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     
     const chipBefore = await $('*=installed');
     const countBefore = await chipBefore.getText();
@@ -202,7 +241,7 @@ describe('Settings - Configuration Persistence', () => {
     await browser.pause(500);
     
     // Navigate back
-    await goToSettings();
+    await goToSettings('emulators');
     
     const chipAfter = await $('*=installed');
     const countAfter = await chipAfter.getText();

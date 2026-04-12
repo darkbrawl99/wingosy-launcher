@@ -16,7 +16,7 @@ describe('ROM Download - Prerequisites', () => {
   });
 
   it('should have RomM configured for download tests', async () => {
-    await goToSettings();
+    await goToSettings('romm');
     await browser.pause(2000);
     
     // Check if RomM is connected
@@ -73,15 +73,15 @@ describe('ROM Download - UI Elements', () => {
     expect(hasDownload || hasPlay).toBe(true);
   });
 
-  it('should show Cloud Only badge for remote games', async () => {
-    // Look for Cloud Only chip/badge in game details
-    const cloudBadge = await $('*=Cloud Only');
+  it('should show Cloud only badge for remote games', async () => {
+    // Look for Cloud only chip/badge in game details
+    const cloudBadge = await $('*=Cloud only');
     const remoteBadge = await $('*=Remote');
     
     const hasCloudBadge = await cloudBadge.isDisplayed().catch(() => false);
     const hasRemoteBadge = await remoteBadge.isDisplayed().catch(() => false);
     
-    console.log(`Cloud Only badge: ${hasCloudBadge}`);
+    console.log(`Cloud only badge: ${hasCloudBadge}`);
     console.log(`Remote badge: ${hasRemoteBadge}`);
     
     // This is informational - not all games are remote
@@ -190,16 +190,15 @@ describe('ROM Download - State Management', () => {
   });
 
   it('should update sync state after successful download', async () => {
-    // After a successful download, game should show as Synced not Cloud Only
+    // After a successful download, chip should show "Downloaded, not synced" instead of "Cloud only"
     const allGames = await $('*=All Games');
     await allGames.click();
     await browser.pause(2000);
     
-    // Look for synced badge
-    const syncedBadge = await $('*=Synced');
-    const hasSynced = await syncedBadge.isDisplayed().catch(() => false);
+    const downloadedBadge = await $('*=Downloaded, not synced');
+    const hasDownloadedLabel = await downloadedBadge.isDisplayed().catch(() => false);
     
-    console.log(`Synced games visible: ${hasSynced}`);
+    console.log(`Downloaded (not synced) label visible: ${hasDownloadedLabel}`);
   });
 
   it('should show Play button after download completes', async () => {

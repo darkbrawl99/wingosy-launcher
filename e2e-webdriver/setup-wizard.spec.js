@@ -5,7 +5,7 @@
  * The setup wizard shows on first run and has 3 steps: RomM Server, ROM Folder, Scan Games
  */
 
-import { waitForAppReady, getPageDiagnostics } from './helpers.js';
+import { waitForAppReady, getPageDiagnostics, goToSettings } from './helpers.js';
 
 describe('Setup Wizard Flow', () => {
   before(async () => {
@@ -232,10 +232,7 @@ describe('Post-Setup Verification', () => {
   });
 
   it('should show emulator section in Settings', async () => {
-    // Navigate to settings if not there
-    const settingsBtn = await $('*=Settings');
-    await settingsBtn.click();
-    await browser.pause(2000);
+    await goToSettings('emulators');
     
     // Find emulators section
     const emulatorsHeading = await $('h6=Emulators');

@@ -51,7 +51,6 @@ function getCoverSrc(coverPath) {
 
 export default function ImmersiveGameTile({
   game,
-  platformLabel,
   focused,
   onFocus,
   onSelect,
@@ -61,7 +60,8 @@ export default function ImmersiveGameTile({
   const coverSrc = useMemo(() => getCoverSrc(game.cover_path), [game.cover_path]);
   const showCover = Boolean(coverSrc) && !imgError;
   const platformColor = PLATFORM_COLORS[game.platform_id] || colors.primary;
-  const platformSlug = (platformLabel || game.platform_id || "").toString().slice(0, 6).toUpperCase();
+  // Match desktop `GameCard`: badge uses platform id (e.g. GBA, NES), not full console names.
+  const platformSlug = (game.platform_id || "").toUpperCase().slice(0, 6);
 
   return (
     <Box

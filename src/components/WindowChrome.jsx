@@ -8,9 +8,9 @@ import RemoveIcon from "@mui/icons-material/Remove";
 import CropSquareIcon from "@mui/icons-material/CropSquare";
 import CloseIcon from "@mui/icons-material/Close";
 import { appWindow } from "@tauri-apps/api/window";
-import { isTauri } from "../utils/isTauri";
+import { isTauri, tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
 
-const CHROME_HEIGHT = 34;
+const CHROME_HEIGHT = 40;
 
 /**
  * Frameless-window top bar: drag region + window controls (Tauri only).
@@ -86,6 +86,7 @@ export default function WindowChrome() {
   return (
     <Box
       data-testid="window-chrome"
+      {...tauriDragRegionProps()}
       sx={{
         height: CHROME_HEIGHT,
         flexShrink: 0,
@@ -94,10 +95,10 @@ export default function WindowChrome() {
         pl: 1.25,
         pr: 0.25,
         bgcolor: chromeBg,
+        ...tauriDragRegionSx,
       }}
     >
       <Box
-        data-tauri-drag-region
         sx={{
           flex: 1,
           height: "100%",
@@ -120,35 +121,42 @@ export default function WindowChrome() {
           Wingosy Launcher
         </Typography>
       </Box>
-      <Box sx={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+      <Box
+        {...tauriNoDragProps()}
+        sx={{ display: "flex", alignItems: "center", flexShrink: 0, ...tauriNoDragSx }}
+      >
         <Tooltip title="Minimize">
           <IconButton
+            {...tauriNoDragProps()}
             size="small"
             onClick={minimize}
             aria-label="Minimize"
-            sx={{ borderRadius: 1, color: "text.secondary" }}
+            sx={{ borderRadius: 1, color: "text.secondary", ...tauriNoDragSx }}
           >
             <RemoveIcon sx={{ fontSize: 18 }} />
           </IconButton>
         </Tooltip>
         <Tooltip title="Maximize">
           <IconButton
+            {...tauriNoDragProps()}
             size="small"
             onClick={toggleMaximize}
             aria-label="Maximize"
-            sx={{ borderRadius: 1, color: "text.secondary" }}
+            sx={{ borderRadius: 1, color: "text.secondary", ...tauriNoDragSx }}
           >
             <CropSquareIcon sx={{ fontSize: 16 }} />
           </IconButton>
         </Tooltip>
         <Tooltip title="Close">
           <IconButton
+            {...tauriNoDragProps()}
             size="small"
             onClick={close}
             aria-label="Close"
             sx={{
               borderRadius: 1,
               color: "text.secondary",
+              ...tauriNoDragSx,
               "&:hover": {
                 bgcolor: alpha(theme.palette.error.main, 0.12),
                 color: "error.main",

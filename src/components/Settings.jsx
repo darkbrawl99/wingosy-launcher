@@ -9,6 +9,7 @@ import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
 import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemButton from "@mui/material/ListItemButton";
 import LinearProgress from "@mui/material/LinearProgress";
 import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
@@ -40,9 +41,14 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
 import DialogActions from "@mui/material/DialogActions";
 import Select from "@mui/material/Select";
+import Slider from "@mui/material/Slider";
 import FormControl from "@mui/material/FormControl";
+import FormLabel from "@mui/material/FormLabel";
+import RadioGroup from "@mui/material/RadioGroup";
+import Radio from "@mui/material/Radio";
 import InputLabel from "@mui/material/InputLabel";
 import TuneIcon from "@mui/icons-material/Tune";
 import ToggleButton from "@mui/material/ToggleButton";
@@ -50,11 +56,43 @@ import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import LockIcon from "@mui/icons-material/Lock";
 import PaletteIcon from "@mui/icons-material/Palette";
+import DesktopWindowsIcon from "@mui/icons-material/DesktopWindows";
+import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
+import VolumeUpIcon from "@mui/icons-material/VolumeUp";
+import EmojiEventsIcon from "@mui/icons-material/EmojiEvents";
 import { invoke } from "@tauri-apps/api/tauri";
+import { open as shellOpen } from "@tauri-apps/api/shell";
 import { useAppTheme } from "../ThemeContext";
+import { useUiSounds } from "../UiSoundsContext";
 import AccentHueSlider from "./AccentHueSlider";
 import { open } from "@tauri-apps/api/dialog";
 import normalizeUrl from "../utils/normalizeUrl";
+import { tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
+
+/** Full-width cards in the scroll column (avoids uneven widths after flex/scroll changes). */
+const SETTINGS_CARD_SX = {
+  p: 3,
+  mb: 3,
+  borderRadius: 3,
+  width: "100%",
+  maxWidth: "100%",
+  boxSizing: "border-box",
+};
+const SETTINGS_CARD_GRADIENT_SX = {
+  ...SETTINGS_CARD_SX,
+  background: "linear-gradient(135deg, #1e1e26 0%, #252530 100%)",
+};
+
+const SETTINGS_SECTIONS = [
+  { id: "general", label: "General", Icon: DesktopWindowsIcon },
+  { id: "appearance", label: "Appearance", Icon: PaletteIcon },
+  { id: "sound", label: "Sound", Icon: VolumeUpIcon },
+  { id: "romm", label: "RomM", Icon: CloudIcon },
+  { id: "library", label: "Library", Icon: FolderIcon },
+  { id: "emulators", label: "Emulators", Icon: SportsEsportsIcon },
+  { id: "integrations", label: "Integrations", Icon: EmojiEventsIcon },
+  { id: "updates", label: "Updates", Icon: SystemUpdateIcon },
+];
 
 export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRommConnect, onLibraryChange, onImmersiveModeChange, onFullscreenChange }) {
   const [config, setConfig] = useState(null);
@@ -89,9 +127,34 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   // UI Mode flags: Desktop (default) vs Immersive mode (`display.big_picture` in config)
   const [immersiveModeEnabled, setImmersiveModeEnabled] = useState(false);
   const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
+  const [retroachievementsEnabled, setRetroachievementsEnabled] = useState(false);
   
   // Theme/Appearance settings from context
   const { themeMode, setThemeMode, accentHue, setAccentHue } = useAppTheme();
+  const {
+    uiSoundsEnabled,
+    uiSoundsVolume,
+    setUiSoundsEnabled,
+    setUiSoundsVolume,
+    refreshUiSoundsFromConfig,
+  } = useUiSounds();
+  const [ambientEnabled, setAmbientEnabled] = useState(false);
+  const [ambientVolume, setAmbientVolume] = useState(35);
+  const [ambientPath, setAmbientPath] = useState(null);
+  const [ambientIsFolder, setAmbientIsFolder] = useState(false);
+  const [ambientShuffle, setAmbientShuffle] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("general");
+  const [appVersion, setAppVersion] = useState("");
+  const [checkOnStartup, setCheckOnStartup] = useState(true);
+  const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
+  const [updateChannel, setUpdateChannel] = useState("stable");
+  const [updateCheckLoading, setUpdateCheckLoading] = useState(false);
+  const [updateCheckResult, setUpdateCheckResult] = useState(null);
+  const [prereleaseLeaveDialogOpen, setPrereleaseLeaveDialogOpen] = useState(false);
+  /** Which pre-release channel the user is leaving (`nightly` | `beta`) — drives dialog copy. */
+  const [leavingPrereleaseChannel, setLeavingPrereleaseChannel] = useState(null);
+  const [pendingChannel, setPendingChannel] = useState("stable");
+  const [pendingAutoOff, setPendingAutoOff] = useState(false);
 
   useEffect(() => {
     loadConfig();
@@ -99,6 +162,12 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
     loadMissingCores();
     loadPlatformDefaults();
     loadPlatforms();
+  }, []);
+
+  useEffect(() => {
+    invoke("get_app_version")
+      .then((v) => setAppVersion(String(v)))
+      .catch(() => setAppVersion(""));
   }, []);
 
   async function loadConfig() {
@@ -110,7 +179,113 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       setRomsDirectory(cfg.library?.roms_directory || "");
       setImmersiveModeEnabled(Boolean(cfg.display?.big_picture));
       setFullscreenEnabled(Boolean(cfg.display?.fullscreen));
+      setRetroachievementsEnabled(Boolean(cfg.display?.retroachievements_enabled));
+      setCheckOnStartup(cfg.updater?.check_on_startup !== false);
+      const auto = Boolean(cfg.updater?.auto_update_enabled);
+      setAutoUpdateEnabled(auto);
+      let ch = cfg.updater?.channel;
+      if (ch !== "nightly" && ch !== "beta") ch = "stable";
+      if (!auto) ch = "stable";
+      setUpdateChannel(ch);
+      const a = cfg.audio || {};
+      setAmbientEnabled(Boolean(a.ambient_enabled));
+      setAmbientVolume(typeof a.ambient_volume === "number" ? a.ambient_volume : 35);
+      setAmbientPath(a.ambient_path || null);
+      setAmbientIsFolder(Boolean(a.ambient_is_folder));
+      setAmbientShuffle(Boolean(a.ambient_shuffle));
+      refreshUiSoundsFromConfig(cfg);
     } catch {}
+  }
+
+  async function applyUpdateChannel(nextChannel) {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.updater = cfg.updater || {};
+      cfg.updater.channel = nextChannel;
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setUpdateChannel(nextChannel);
+    } catch {}
+  }
+
+  function requestChannelChange(nextChannel) {
+    const leavingPre = updateChannel === "nightly" || updateChannel === "beta";
+    if (leavingPre && nextChannel !== updateChannel) {
+      setLeavingPrereleaseChannel(updateChannel);
+      setPendingChannel(nextChannel);
+      setPendingAutoOff(false);
+      setPrereleaseLeaveDialogOpen(true);
+      return;
+    }
+    applyUpdateChannel(nextChannel);
+  }
+
+  async function confirmPrereleaseLeave() {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.updater = cfg.updater || {};
+      cfg.updater.channel = pendingChannel || "stable";
+      if (pendingAutoOff) {
+        cfg.updater.auto_update_enabled = false;
+        setAutoUpdateEnabled(false);
+      }
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setUpdateChannel(pendingChannel || "stable");
+    } catch {}
+    setPrereleaseLeaveDialogOpen(false);
+    setLeavingPrereleaseChannel(null);
+    setPendingChannel("stable");
+    setPendingAutoOff(false);
+  }
+
+  function cancelPrereleaseLeave() {
+    setPrereleaseLeaveDialogOpen(false);
+    setLeavingPrereleaseChannel(null);
+    setPendingChannel("stable");
+    setPendingAutoOff(false);
+  }
+
+  async function persistAutoUpdate(nextAuto) {
+    if (!nextAuto && (updateChannel === "nightly" || updateChannel === "beta")) {
+      setLeavingPrereleaseChannel(updateChannel);
+      setPendingAutoOff(true);
+      setPendingChannel("stable");
+      setPrereleaseLeaveDialogOpen(true);
+      return;
+    }
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.updater = cfg.updater || {};
+      cfg.updater.auto_update_enabled = nextAuto;
+      if (!nextAuto) {
+        cfg.updater.channel = "stable";
+        setUpdateChannel("stable");
+      }
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setAutoUpdateEnabled(nextAuto);
+    } catch {}
+  }
+
+  async function handleCheckForUpdates() {
+    setUpdateCheckLoading(true);
+    setUpdateCheckResult(null);
+    try {
+      const r = await invoke("check_for_app_update", { channel: updateChannel });
+      setUpdateCheckResult(r);
+    } catch (err) {
+      setUpdateCheckResult({
+        current_version: appVersion,
+        error: err?.message || String(err),
+        is_update_available: false,
+        latest_version: null,
+        release_url: null,
+        channel: updateChannel,
+      });
+    } finally {
+      setUpdateCheckLoading(false);
+    }
   }
 
   async function persistDisplayFlags(nextImmersive, nextFullscreen) {
@@ -120,6 +295,98 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
     cfg.display.fullscreen = Boolean(nextFullscreen);
     await invoke("save_config", { config: cfg });
     setConfig(cfg);
+  }
+
+  async function persistRetroachievements(next) {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.display = cfg.display || {};
+      cfg.display.retroachievements_enabled = Boolean(next);
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setRetroachievementsEnabled(Boolean(next));
+    } catch (err) {
+      console.error("Failed to save RetroAchievements preference:", err);
+    }
+  }
+
+  async function persistUiSounds(next) {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.display = cfg.display || {};
+      cfg.display.ui_sounds_enabled = Boolean(next);
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setUiSoundsEnabled(Boolean(next));
+      refreshUiSoundsFromConfig(cfg);
+      onLibraryChange?.();
+    } catch {}
+  }
+
+  async function persistUiSoundsVolume(vol) {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.audio = cfg.audio || {};
+      cfg.audio.ui_sounds_volume = Math.min(100, Math.max(0, Math.round(vol)));
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      setUiSoundsVolume(cfg.audio.ui_sounds_volume);
+      refreshUiSoundsFromConfig(cfg);
+      onLibraryChange?.();
+    } catch {}
+  }
+
+  async function persistAmbient(partial) {
+    try {
+      const cfg = config || (await invoke("get_config"));
+      cfg.audio = { ...(cfg.audio || {}), ...partial };
+      await invoke("save_config", { config: cfg });
+      setConfig(cfg);
+      const a = cfg.audio || {};
+      if (typeof a.ambient_enabled === "boolean") setAmbientEnabled(a.ambient_enabled);
+      if (typeof a.ambient_volume === "number") setAmbientVolume(a.ambient_volume);
+      if (a.ambient_path === undefined) setAmbientPath(null);
+      else if (a.ambient_path === null) setAmbientPath(null);
+      else setAmbientPath(a.ambient_path);
+      if (typeof a.ambient_is_folder === "boolean") setAmbientIsFolder(a.ambient_is_folder);
+      if (typeof a.ambient_shuffle === "boolean") setAmbientShuffle(a.ambient_shuffle);
+      refreshUiSoundsFromConfig(cfg);
+      onLibraryChange?.();
+    } catch {}
+  }
+
+  async function pickAmbientFile() {
+    try {
+      const sel = await open({
+        multiple: false,
+        filters: [{ name: "Audio", extensions: ["mp3", "ogg", "wav", "flac", "m4a", "opus"] }],
+      });
+      if (typeof sel !== "string" || !sel) return;
+      await persistAmbient({
+        ambient_path: sel,
+        ambient_is_folder: false,
+      });
+    } catch {}
+  }
+
+  async function pickAmbientFolder() {
+    try {
+      const sel = await open({ directory: true, multiple: false });
+      if (typeof sel !== "string" || !sel) return;
+      await persistAmbient({
+        ambient_path: sel,
+        ambient_is_folder: true,
+      });
+    } catch {}
+  }
+
+  async function clearAmbientSource() {
+    await persistAmbient({
+      ambient_path: null,
+      ambient_is_folder: false,
+      ambient_shuffle: false,
+      ambient_enabled: false,
+    });
   }
 
   async function loadEmulators() {
@@ -420,15 +687,113 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   const unavailableEmus = emulators.filter((e) => !e.is_installed && !e.has_download);
 
   return (
-    <Box sx={{ p: 3, maxWidth: 800, mx: "auto" }}>
-      <Button startIcon={<ArrowBackIcon />} onClick={onBack} sx={{ mb: 2 }} color="inherit">
-        Back
-      </Button>
+    <Box
+      sx={{
+        p: { xs: 2, sm: 3 },
+        maxWidth: 1120,
+        width: "100%",
+        mx: "auto",
+        boxSizing: "border-box",
+        display: "flex",
+        flexDirection: "column",
+        minHeight: 0,
+        flex: 1,
+      }}
+    >
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 2,
+          flexWrap: "wrap",
+          mb: 2,
+        }}
+      >
+        <Button
+          {...tauriNoDragProps()}
+          data-argosy-sound="back"
+          startIcon={<ArrowBackIcon />}
+          onClick={onBack}
+          color="inherit"
+          sx={{ ...tauriNoDragSx, flexShrink: 0 }}
+        >
+          Back
+        </Button>
+        <Box
+          {...tauriDragRegionProps()}
+          sx={{
+            flex: 1,
+            minWidth: 120,
+            minHeight: 40,
+            display: "flex",
+            alignItems: "center",
+            ...tauriDragRegionSx,
+          }}
+        >
+          <Typography variant="h4" sx={{ mb: 0 }}>
+            Settings
+          </Typography>
+        </Box>
+      </Box>
 
-      <Typography variant="h4" gutterBottom>Settings</Typography>
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+          gap: 2,
+          flex: 1,
+          minHeight: 0,
+          mt: 1,
+        }}
+      >
+        <Paper
+          component="nav"
+          variant="outlined"
+          elevation={0}
+          sx={{
+            width: { xs: "100%", md: 232 },
+            flexShrink: 0,
+            borderRadius: 2,
+            overflow: "hidden",
+            alignSelf: { xs: "stretch", md: "flex-start" },
+          }}
+        >
+          <List disablePadding sx={{ py: 0.5 }}>
+            {SETTINGS_SECTIONS.map(({ id, label, Icon }) => (
+              <ListItemButton
+                key={id}
+                selected={settingsSection === id}
+                onClick={() => setSettingsSection(id)}
+                data-testid={`settings-nav-${id}`}
+                sx={{ py: 1.25, px: 2 }}
+              >
+                <ListItemIcon sx={{ minWidth: 40 }}>
+                  <Icon fontSize="small" color={settingsSection === id ? "primary" : "action"} />
+                </ListItemIcon>
+                <ListItemText
+                  primary={label}
+                  primaryTypographyProps={{
+                    variant: "body2",
+                    fontWeight: settingsSection === id ? 600 : 400,
+                  }}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </Paper>
 
-      {/* UI */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+          }}
+        >
+      {settingsSection === "general" && (
+      <Paper sx={SETTINGS_CARD_SX}>
         <Typography variant="h6" gutterBottom>UI</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Switch between desktop (default) and Immersive mode — a large-type, controller-friendly layout aligned with the Wingosy look. Optional OS fullscreen is ideal for couch play.
@@ -482,9 +847,10 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
           </Typography>
         </Box>
       </Paper>
+      )}
 
-      {/* Appearance */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+      {settingsSection === "appearance" && (
+      <Paper sx={SETTINGS_CARD_SX}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
           <PaletteIcon color="primary" />
           <Typography variant="h6">Appearance</Typography>
@@ -523,9 +889,130 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
         </Typography>
         <AccentHueSlider accentHue={accentHue} setAccentHue={setAccentHue} />
       </Paper>
+      )}
 
-      {/* RomM */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+      {settingsSection === "sound" && (
+      <Paper sx={SETTINGS_CARD_SX}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
+          <VolumeUpIcon color="primary" />
+          <Typography variant="h6">Sound (Immersive)</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          UI feedback and background music apply only while Immersive mode is active (not on the desktop shell).
+        </Typography>
+
+        <Typography variant="subtitle2" sx={{ mb: 0.5 }}>
+          UI sounds
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          Argosy-style taps and navigation (bundled clips).
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={uiSoundsEnabled}
+              onChange={async (e) => {
+                await persistUiSounds(e.target.checked);
+              }}
+            />
+          }
+          label="Enable UI sounds"
+        />
+        <Box sx={{ px: 1, mt: 1, mb: 2, maxWidth: 400 }}>
+          <Typography variant="caption" color="text.secondary">
+            Volume
+          </Typography>
+          <Slider
+            size="small"
+            disabled={!uiSoundsEnabled}
+            value={uiSoundsVolume}
+            min={0}
+            max={100}
+            valueLabelDisplay="auto"
+            onChange={(_, v) => setUiSoundsVolume(v)}
+            onChangeCommitted={(_, v) => persistUiSoundsVolume(v)}
+          />
+        </Box>
+
+        <Typography variant="subtitle2" sx={{ mb: 0.5, mt: 1 }}>
+          Background music
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+          Optional looping track or shuffled folder playback while browsing in Immersive mode.
+        </Typography>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={ambientEnabled}
+              onChange={async (e) => {
+                await persistAmbient({ ambient_enabled: e.target.checked });
+              }}
+              disabled={!ambientPath}
+            />
+          }
+          label="Play background music"
+        />
+        {!ambientPath ? (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1, ml: 4.5 }}>
+            Choose an audio file or folder below to enable.
+          </Typography>
+        ) : null}
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>
+          <Button size="small" variant="outlined" onClick={pickAmbientFile}>
+            Audio file…
+          </Button>
+          <Button size="small" variant="outlined" onClick={pickAmbientFolder}>
+            Folder…
+          </Button>
+          {ambientPath ? (
+            <Button size="small" color="inherit" onClick={clearAmbientSource}>
+              Clear
+            </Button>
+          ) : null}
+        </Box>
+        {ambientPath ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontFamily: "monospace", fontSize: "0.75rem", wordBreak: "break-all" }}>
+            {ambientIsFolder ? "[Folder] " : "[File] "}
+            {ambientPath}
+          </Typography>
+        ) : null}
+        {ambientIsFolder ? (
+          <FormControlLabel
+            sx={{ mb: 2 }}
+            control={
+              <Switch
+                checked={ambientShuffle}
+                onChange={async (e) => {
+                  await persistAmbient({ ambient_shuffle: e.target.checked });
+                }}
+                disabled={!ambientPath}
+              />
+            }
+            label="Shuffle tracks"
+          />
+        ) : null}
+        <Box sx={{ px: 1, maxWidth: 400 }}>
+          <Typography variant="caption" color="text.secondary">
+            Music volume
+          </Typography>
+          <Slider
+            size="small"
+            disabled={!ambientEnabled || !ambientPath}
+            value={ambientVolume}
+            min={0}
+            max={100}
+            valueLabelDisplay="auto"
+            onChange={(_, v) => setAmbientVolume(v)}
+            onChangeCommitted={(_, v) =>
+              persistAmbient({ ambient_volume: Math.min(100, Math.max(0, Math.round(v))) })
+            }
+          />
+        </Box>
+      </Paper>
+      )}
+
+      {settingsSection === "romm" && (
+      <Paper sx={SETTINGS_CARD_SX}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
           <CloudIcon color="primary" />
           <Typography variant="h6">RomM Server</Typography>
@@ -583,9 +1070,11 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
         </Box>
         {rommStatus && <Alert severity={rommStatus.type} sx={{ mt: 2 }}>{rommStatus.message}</Alert>}
       </Paper>
+      )}
 
-      {/* Library */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+      {settingsSection === "library" && (
+      <>
+      <Paper sx={SETTINGS_CARD_SX}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
           <FolderIcon color="primary" />
           <Typography variant="h6">Library</Typography>
@@ -640,8 +1129,36 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
         {scanMessage && <Alert severity={scanMessage.type} sx={{ mt: 2 }}>{scanMessage.message}</Alert>}
       </Paper>
 
-      {/* Emulators & Cores - Unified Section */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 3 }}>
+      <Paper sx={SETTINGS_CARD_GRADIENT_SX}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+          <VisibilityOffIcon color="primary" />
+          <Typography variant="h6">Hidden Games</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          View and restore games that you've hidden from your library.
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<VisibilityIcon />}
+          onClick={handleOpenHiddenDialog}
+        >
+          View Hidden Games
+        </Button>
+      </Paper>
+      </>
+      )}
+
+      {settingsSection === "emulators" && (
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: { xs: "column", md: "row" },
+          gap: 3,
+          width: "100%",
+          alignItems: "stretch",
+        }}
+      >
+      <Paper sx={{ ...SETTINGS_CARD_SX, flex: 1, minWidth: 0 }}>
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <SportsEsportsIcon color="primary" />
@@ -930,28 +1447,27 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
         )}
       </Paper>
 
-      {/* Platform Default Emulators */}
-      {platforms.length > 0 && installedEmus.length > 0 && (
-        <Paper sx={{ p: 3, mb: 3, borderRadius: 3, background: "linear-gradient(135deg, #1e1e26 0%, #252530 100%)" }}>
+      {platforms.length > 0 && installedEmus.length > 0 ? (
+        <Paper sx={{ ...SETTINGS_CARD_GRADIENT_SX, flex: 1, minWidth: 0 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
             <TuneIcon color="primary" />
-            <Typography variant="h6">Platform Defaults</Typography>
+            <Typography variant="h6">Platform defaults</Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Choose which emulator to use for each platform. "Auto" uses the first available.
+            Choose which emulator to use for each platform. &quot;Auto&quot; uses the first available.
           </Typography>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {platforms.map(([platform, gameCount]) => {
-              const compatibleEmus = installedEmus.filter(e => 
+              const compatibleEmus = installedEmus.filter(e =>
                 e.supported_platforms.includes(platform.id)
               );
               if (compatibleEmus.length === 0) return null;
-              
+
               const currentDefault = platformDefaults[platform.id] || "";
-              
+
               return (
-                <Box key={platform.id} sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                  <Box sx={{ minWidth: 140 }}>
+                <Box key={platform.id} sx={{ display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap" }}>
+                  <Box sx={{ minWidth: 120 }}>
                     <Typography variant="body2" fontWeight={500}>
                       {platform.name}
                     </Typography>
@@ -959,7 +1475,7 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
                       {gameCount} game{gameCount !== 1 ? "s" : ""}
                     </Typography>
                   </Box>
-                  <FormControl size="small" sx={{ minWidth: 200, flex: 1 }}>
+                  <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
                     <InputLabel>Emulator</InputLabel>
                     <Select
                       value={currentDefault}
@@ -969,7 +1485,7 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
                       <MenuItem value="">
                         <em>Auto (use first available)</em>
                       </MenuItem>
-                      {compatibleEmus.map(emu => (
+                      {compatibleEmus.map((emu) => (
                         <MenuItem key={emu.id} value={emu.id}>
                           {emu.name}
                           {emu.id === "retroarch" && " (+ cores)"}
@@ -982,25 +1498,220 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
             })}
           </Box>
         </Paper>
+      ) : (
+        <Paper sx={{ ...SETTINGS_CARD_GRADIENT_SX, flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+            <TuneIcon color="primary" />
+            <Typography variant="h6">Platform defaults</Typography>
+          </Box>
+          <Typography variant="body2" color="text.secondary">
+            Add games to your library and install at least one emulator to choose a default per platform.
+          </Typography>
+        </Paper>
+      )}
+      </Box>
       )}
 
-      {/* Hidden Games Section */}
-      <Paper sx={{ p: 3, borderRadius: 3, background: "linear-gradient(135deg, #1e1e26 0%, #252530 100%)" }}>
+      {settingsSection === "integrations" && (
+      <Paper sx={SETTINGS_CARD_GRADIENT_SX}>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
-          <VisibilityOffIcon color="primary" />
-          <Typography variant="h6">Hidden Games</Typography>
+          <EmojiEventsIcon color="primary" />
+          <Typography variant="h6">Integrations</Typography>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          View and restore games that you've hidden from your library.
+          App-wide preferences for third-party services. These apply to your whole library, not individual games.
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={<VisibilityIcon />}
-          onClick={handleOpenHiddenDialog}
-        >
-          View Hidden Games
-        </Button>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={retroachievementsEnabled}
+              onChange={(e) => persistRetroachievements(e.target.checked)}
+            />
+          }
+          label="Enable RetroAchievements"
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1, maxWidth: 520 }}>
+          When enabled, Wingosy may connect to RetroAchievements for tracking and display where supported. Full integration is planned for a future release.
+        </Typography>
       </Paper>
+      )}
+
+      {settingsSection === "updates" && (
+      <Paper sx={SETTINGS_CARD_SX}>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}>
+          <SystemUpdateIcon color="primary" />
+          <Typography variant="h6">Updates</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Compare this build to GitHub releases on the channel you choose. When an update is available, open the release page to download the installer. Full silent install may be added in a future build; enabling &quot;Automatic updates&quot; saves your preference for when that ships.
+        </Typography>
+        <Typography variant="body2" sx={{ mb: 2 }}>
+          Current version:{" "}
+          <Box component="span" sx={{ fontFamily: "monospace", fontWeight: 600 }}>
+            {appVersion || "—"}
+          </Box>
+        </Typography>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={autoUpdateEnabled}
+              onChange={(e) => persistAutoUpdate(e.target.checked)}
+            />
+          }
+          label="Automatic updates"
+        />
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 2, ml: 4.5, maxWidth: 560 }}>
+          When enabled, you can opt into pre-release channels below. In-app download/install is not active yet; this toggle records your intent for future releases.
+        </Typography>
+
+        <FormControl component="fieldset" sx={{ mb: 2 }} variant="standard">
+          <FormLabel component="legend">Update channel</FormLabel>
+          <RadioGroup
+            value={updateChannel}
+            onChange={(e) => requestChannelChange(e.target.value)}
+          >
+            <FormControlLabel value="stable" control={<Radio size="small" />} label="Stable — latest official release" />
+            <FormControlLabel
+              value="beta"
+              control={<Radio size="small" />}
+              label="Beta — prerelease builds (tag contains “beta”)"
+              disabled={!autoUpdateEnabled}
+            />
+            <FormControlLabel
+              value="nightly"
+              control={<Radio size="small" />}
+              label="Nightly — automated prerelease builds (tag contains “nightly”)"
+              disabled={!autoUpdateEnabled}
+            />
+          </RadioGroup>
+          {!autoUpdateEnabled && (
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+              Turn on Automatic updates to use Beta or Nightly.
+            </Typography>
+          )}
+        </FormControl>
+
+        <FormControlLabel
+          control={
+            <Switch
+              checked={checkOnStartup}
+              onChange={async (e) => {
+                const next = e.target.checked;
+                setCheckOnStartup(next);
+                try {
+                  const cfg = config || (await invoke("get_config"));
+                  cfg.updater = cfg.updater || {};
+                  cfg.updater.check_on_startup = next;
+                  await invoke("save_config", { config: cfg });
+                  setConfig(cfg);
+                } catch {}
+              }}
+            />
+          }
+          label="Check for updates when Wingosy starts (uses your selected channel)"
+        />
+
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 2 }}>
+          <Button
+            variant="contained"
+            startIcon={<SystemUpdateIcon />}
+            disabled={updateCheckLoading}
+            onClick={handleCheckForUpdates}
+            data-testid="check-for-updates-button"
+          >
+            {updateCheckLoading ? "Checking…" : "Check for updates"}
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<OpenInNewIcon />}
+            onClick={() => shellOpen("https://github.com/yash-1o1/wingosy-launcher/releases")}
+          >
+            All releases
+          </Button>
+        </Box>
+        {updateCheckLoading && <LinearProgress sx={{ mt: 2, borderRadius: 1 }} />}
+        {updateCheckResult?.error && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            {updateCheckResult.error}
+            {updateCheckResult.channel ? (
+              <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                Channel: {updateCheckResult.channel}
+              </Typography>
+            ) : null}
+          </Alert>
+        )}
+        {updateCheckResult && !updateCheckResult.error && updateCheckResult.is_update_available && (
+          <Alert
+            severity="success"
+            sx={{ mt: 2 }}
+            action={
+              updateCheckResult.release_url ? (
+                <Button color="inherit" size="small" onClick={() => shellOpen(updateCheckResult.release_url)}>
+                  Open release
+                </Button>
+              ) : null
+            }
+          >
+            Update available on {updateCheckResult.channel || updateChannel}
+            {updateCheckResult.latest_version ? ` (${updateCheckResult.latest_version})` : ""}.
+          </Alert>
+        )}
+        {updateCheckResult && !updateCheckResult.error && !updateCheckResult.is_update_available && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            You’re up to date on {updateCheckResult.channel || updateChannel}
+            {updateCheckResult.latest_version ? ` (latest: ${updateCheckResult.latest_version})` : ""}.
+          </Alert>
+        )}
+      </Paper>
+      )}
+
+        </Box>
+      </Box>
+
+      <Dialog open={prereleaseLeaveDialogOpen} onClose={cancelPrereleaseLeave} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {pendingAutoOff
+            ? "Turn off automatic updates?"
+            : leavingPrereleaseChannel === "beta"
+              ? "Leave the Beta channel?"
+              : "Leave the Nightly channel?"}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" paragraph>
+            {pendingAutoOff ? (
+              <>
+                You’re on <strong>{leavingPrereleaseChannel === "beta" ? "Beta" : "Nightly"}</strong>. Turning off
+                automatic updates moves you to the <strong>Stable</strong> channel. Your next in-app update check will
+                follow stable releases until you enable automatic updates and pick a pre-release channel again.
+              </>
+            ) : (
+              <>
+                You’re switching away from{" "}
+                <strong>{leavingPrereleaseChannel === "beta" ? "Beta" : "Nightly"}</strong>. Your update checks will
+                follow the <strong>{pendingChannel === "stable" ? "Stable" : pendingChannel === "beta" ? "Beta" : "Nightly"}</strong>{" "}
+                channel.
+              </>
+            )}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" paragraph>
+            {(pendingAutoOff || pendingChannel === "stable") && (
+              <>
+                On <strong>Stable</strong>, in-app updates follow regular releases.{" "}
+              </>
+            )}
+            If you want the <strong>latest stable build immediately</strong> (for example, to leave beta or nightly sooner
+            than the next stable release), download and install it manually from{" "}
+            <Box component="span" sx={{ fontWeight: 600 }}>GitHub Releases</Box> — the app does not downgrade by itself.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelPrereleaseLeave}>Cancel</Button>
+          <Button variant="contained" onClick={confirmPrereleaseLeave}>
+            {pendingAutoOff ? "Turn off & use Stable" : "Continue"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Hidden Games Dialog */}
       <Dialog

@@ -1,5 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Box from "@mui/material/Box";
+import Snackbar from "@mui/material/Snackbar";
+import Button from "@mui/material/Button";
 import Sidebar from "./components/Sidebar";
 import Library from "./components/Library";
 import GameDetails from "./components/GameDetails";
@@ -7,13 +9,41 @@ import Settings from "./components/Settings";
 import SetupWizard from "./components/SetupWizard";
 import ImmersiveModeApp from "./immersive/ImmersiveModeApp";
 import { invoke } from "@tauri-apps/api/tauri";
-import { appWindow } from "@tauri-apps/api/window";
+import { open as openUrl } from "@tauri-apps/api/shell";
+import { appWindow, getCurrent } from "@tauri-apps/api/window";
 import { setFullscreenReliable } from "./windowFullscreen";
 import WindowChrome from "./components/WindowChrome";
+import { isTauri, mousedownTargetElement } from "./utils/isTauri";
+import { UiSoundsProvider } from "./UiSoundsContext";
 
 const DRAWER_WIDTH = 260;
 
 function AppShell({ children }) {
+  useEffect(() => {
+    if (!isTauri()) return undefined;
+    /**
+     * Ensures custom titlebar dragging works even when CSS/HMR is flaky (WebView2).
+     * Requires `window.startDragging` in tauri.conf.json allowlist.
+     */
+    function onMouseDown(e) {
+      if (e.button !== 0) return;
+      const el = mousedownTargetElement(e.target);
+      if (!el) return;
+      if (el.closest("[data-tauri-no-drag]")) return;
+      if (!el.closest("[data-tauri-drag-region]")) return;
+      getCurrent()
+        .startDragging()
+        .catch((err) => {
+          console.warn(
+            "[Wingosy] startDragging failed — use `tauri dev` (not dev:web), restart after `tauri.conf` changes:",
+            err
+          );
+        });
+    }
+    document.addEventListener("mousedown", onMouseDown, true);
+    return () => document.removeEventListener("mousedown", onMouseDown, true);
+  }, []);
+
   return (
     <Box
       sx={{
@@ -45,6 +75,8 @@ function App() {
   const [rommUrl, setRommUrl] = useState("");
   const [immersiveModeEnabled, setImmersiveModeEnabled] = useState(false);
   const [immersiveModeFullscreen, setImmersiveModeFullscreen] = useState(false);
+  const [updateSnack, setUpdateSnack] = useState({ open: false, url: "", version: "" });
+  const startupUpdateCheckDone = useRef(false);
 
   useEffect(() => {
     checkFirstRun();
@@ -99,6 +131,33 @@ function App() {
         }
         setImmersiveModeEnabled(Boolean(cfg.display?.big_picture));
         setImmersiveModeFullscreen(Boolean(cfg.display?.fullscreen));
+        if (
+          !cfg.updater?.auto_update_enabled &&
+          (cfg.updater?.channel === "nightly" || cfg.updater?.channel === "beta")
+        ) {
+          cfg.updater = cfg.updater || {};
+          cfg.updater.channel = "stable";
+          await invoke("save_config", { config: cfg });
+        }
+        if (!startupUpdateCheckDone.current && cfg.updater?.check_on_startup !== false) {
+          startupUpdateCheckDone.current = true;
+          const ch =
+            cfg.updater?.auto_update_enabled &&
+            (cfg.updater.channel === "nightly" || cfg.updater.channel === "beta")
+              ? cfg.updater.channel
+              : "stable";
+          invoke("check_for_app_update", { channel: ch })
+            .then((r) => {
+              if (r?.is_update_available && r?.release_url) {
+                setUpdateSnack({
+                  open: true,
+                  url: r.release_url,
+                  version: r.latest_version || "",
+                });
+              }
+            })
+            .catch(() => {});
+        }
       } catch {
         // config may not exist yet
       }
@@ -196,8 +255,14 @@ function App() {
     }
   }
 
-  if (showSetup === null) {
+  function wrapUiSounds(node) {
     return (
+      <UiSoundsProvider immersiveActive={immersiveModeEnabled}>{node}</UiSoundsProvider>
+    );
+  }
+
+  if (showSetup === null) {
+    return wrapUiSounds(
       <Box
         sx={{
           display: "flex",
@@ -211,9 +276,17 @@ function App() {
   }
 
   if (showSetup) {
-    return (
+    return wrapUiSounds(
       <AppShell>
-        <Box sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+          }}
+        >
           <SetupWizard
             onComplete={handleSetupComplete}
             onRommConnect={handleRommConnect}
@@ -224,7 +297,7 @@ function App() {
   }
 
   if (immersiveModeEnabled) {
-    return (
+    return wrapUiSounds(
       <AppShell>
         <ImmersiveModeApp
           rommToken={rommToken}
@@ -245,7 +318,7 @@ function App() {
     );
   }
 
-  return (
+  return wrapUiSounds(
     <AppShell>
       <Box sx={{ display: "flex", flex: 1, minHeight: 0, overflow: "hidden" }}>
       <Sidebar
@@ -261,11 +334,23 @@ function App() {
         sx={{
           flex: 1,
           minHeight: 0,
-          overflow: "auto",
+          minWidth: 0,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
           bgcolor: "background.default",
         }}
       >
         {view === "library" && (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              overscrollBehavior: "contain",
+            }}
+          >
           <Library
             games={games}
             loading={loading}
@@ -278,8 +363,18 @@ function App() {
             error={error}
             onDismissError={() => setError(null)}
           />
+          </Box>
         )}
         {view === "details" && selectedGame && (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              overscrollBehavior: "contain",
+            }}
+          >
           <GameDetails
             game={selectedGame}
             platforms={platforms}
@@ -305,8 +400,10 @@ function App() {
             rommToken={rommToken}
             rommUrl={rommUrl}
           />
+          </Box>
         )}
         {view === "settings" && (
+          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <Settings
             onBack={() => {
               handleNavigate("library");
@@ -317,9 +414,40 @@ function App() {
             onRommConnect={handleRommConnect}
             onLibraryChange={loadData}
           />
+          </Box>
         )}
       </Box>
       </Box>
+      <Snackbar
+        open={updateSnack.open}
+        onClose={() => setUpdateSnack((s) => ({ ...s, open: false }))}
+        message={
+          updateSnack.version
+            ? `Update available: ${updateSnack.version}`
+            : "Update available"
+        }
+        action={
+          <>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => {
+                if (updateSnack.url) openUrl(updateSnack.url);
+              }}
+            >
+              View
+            </Button>
+            <Button
+              color="inherit"
+              size="small"
+              onClick={() => setUpdateSnack((s) => ({ ...s, open: false }))}
+            >
+              Dismiss
+            </Button>
+          </>
+        }
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      />
     </AppShell>
   );
 }

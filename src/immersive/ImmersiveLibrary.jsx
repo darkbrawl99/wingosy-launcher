@@ -23,7 +23,6 @@ export default function ImmersiveLibrary({
   loading,
   error,
   games,
-  platforms,
   selectedIndex,
   onSelectedIndexChange,
   onSelectGame,
@@ -33,12 +32,6 @@ export default function ImmersiveLibrary({
   const [section, setSection] = useState("all"); // all | favorites | recent
   const gridRef = useRef(null);
   const { colors } = useAppTheme();
-
-  const platformNameById = useMemo(() => {
-    const map = new Map();
-    for (const [p] of platforms) map.set(p.id, p.short_name || p.name || p.id);
-    return map;
-  }, [platforms]);
 
   const favorites = useMemo(
     () => games.filter((g) => g.is_favorite),
@@ -193,12 +186,22 @@ export default function ImmersiveLibrary({
             onClick={onExitImmersive}
             sx={{ borderRadius: 2, px: 2.25, textTransform: "none", fontWeight: 700 }}
           >
-            Exit to desktop
+            Exit to desktop mode
           </Button>
         </Stack>
       </Box>
 
-      <Box sx={{ flex: 1, overflow: "auto", px: 5, py: 3 }}>
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
+          px: 5,
+          py: 3,
+        }}
+      >
         {error ? (
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
@@ -240,7 +243,6 @@ export default function ImmersiveLibrary({
               <Box key={g.id} data-immersive-index={idx}>
                 <ImmersiveGameTile
                   game={g}
-                  platformLabel={(platformNameById.get(g.platform_id) || g.platform_id || "").toUpperCase()}
                   focused={idx === selectedIndex}
                   onFocus={() => onSelectedIndexChange(idx)}
                   onSelect={() => onSelectGame(g)}

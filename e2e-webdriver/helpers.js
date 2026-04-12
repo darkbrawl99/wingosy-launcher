@@ -128,9 +128,10 @@ export async function ensureMainApp() {
 }
 
 /**
- * Navigate to Settings page
+ * Navigate to Settings page.
+ * @param {string} [sectionId] - Optional sidebar section: general | appearance | sound | romm | library | emulators | integrations | updates
  */
-export async function goToSettings() {
+export async function goToSettings(sectionId) {
   await ensureMainApp();
   
   const settingsBtn = await $('*=Settings');
@@ -148,7 +149,15 @@ export async function goToSettings() {
   
   // Verify we're in settings
   const heading = await $('h4=Settings');
-  return await heading.isDisplayed().catch(() => false);
+  const ok = await heading.isDisplayed().catch(() => false);
+  if (sectionId && ok) {
+    const nav = await $(`[data-testid="settings-nav-${sectionId}"]`);
+    if (await nav.isDisplayed().catch(() => false)) {
+      await nav.click();
+      await browser.pause(400);
+    }
+  }
+  return ok;
 }
 
 /**

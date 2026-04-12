@@ -46,8 +46,6 @@ cd src-tauri && cargo test
 | `models/game.rs` | Game creation, play time, filters |
 | `scanner/mod.rs` | ROM name cleaning, multi-disc |
 
-**Display / Immersive:** `config/mod.rs` asserts `display.big_picture` and `display.fullscreen` defaults and TOML deserialization.
-
 ## Integration Tests (Rust)
 
 These hit the **real network** (GitHub, buildbot, RomM, etc.). They are **important** for validating API clients and download paths; we are **not** telling anyone to skip them on purpose.
@@ -118,8 +116,8 @@ npm run test:e2e:immersive    # Immersive mode only
 |------|---------------|
 | `setup-wizard.spec.js` | First-run wizard |
 | `app.spec.js` | Navigation, sidebar |
-| `immersive.spec.js` | Immersive mode toggle, library chrome, exit to desktop |
-| `settings.spec.js` | RomM config, emulators |
+| `immersive.spec.js` | Immersive toggle from Settings, Immersive library chrome, **Exit to desktop mode** |
+| `settings.spec.js` | Navigation, General default, Appearance / Sound / Updates smoke, RomM, Library, Emulators (with platform defaults beside it), persistence |
 | `emulator-download.spec.js` | Emulator installation |
 | `retroarch-cores.spec.js` | Core management |
 | `rom-download.spec.js` | ROM downloads |

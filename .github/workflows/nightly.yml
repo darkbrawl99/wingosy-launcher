@@ -1,9 +1,13 @@
 # Nightly channel: prerelease builds (GitHub tag name contains `nightly`).
 # The app’s **Nightly** update track picks the newest matching prerelease.
 #
+# Version: each run from `main` (schedule or workflow_dispatch) bumps PATCH (0.0.1)
+# via `scripts/bump-version.mjs` and commits back to main. Tag-only runs use the
+# repo version at that tag without bumping.
+#
 # Ways to publish:
-# - Push a tag matching `nightly*` (e.g. `nightly-2026-04-11`, `nightly-v0.2.0`) — release uses that tag name.
-# - Weekday schedule (tag `nightly-<run_id>`) or Actions → Nightly → Run workflow (same).
+# - Push a tag matching `nightly*` — release uses that tag name.
+# - Weekday schedule (`nightly-<run_id>`) or Actions → Nightly → Run workflow.
 
 name: Nightly
 
@@ -24,12 +28,15 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
     env:
       TARGET: x86_64-pc-windows-msvc
-      # Tag push: use the pushed tag. Otherwise: nightly-<run_id> for schedule/manual.
       NIGHTLY_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('nightly-{0}', github.run_id) }}
 
     steps:
@@ -46,6 +53,18 @@ jobs:
 
       - name: Enable Corepack
         run: corepack enable
+
+      - name: Prepare app version (bump PATCH on branch builds)
+        id: ver
+        shell: bash
+        run: |
+          set -e
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VER=$(node -p "require('./package.json').version")
+          else
+            VER=$(node scripts/bump-version.mjs nightly)
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Setup Rust
         uses: dtolnay/rust-action@stable
@@ -66,12 +85,26 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ env.NIGHTLY_TAG }}
-          releaseName: 'Wingosy Launcher Nightly — ${{ env.NIGHTLY_TAG }}'
+          releaseName: 'Wingosy Launcher Nightly v${{ steps.ver.outputs.version }} — ${{ env.NIGHTLY_TAG }}'
           releaseBody: |
+            App version **v${{ steps.ver.outputs.version }}** (PATCH bump for nightly).
+
             Automated **nightly** pre-release. May be unstable.
 
-            - **Tag push:** push a tag matching `nightly*` (e.g. `git tag nightly-$(date +%F) && git push origin nightly-…`) to publish this track without waiting for the schedule.
+            - **Tag push:** push a tag matching `nightly*` to publish without waiting for the schedule.
             - **Stable** channel: [Latest release](https://github.com/yash-1o1/wingosy-launcher/releases/latest) (`v*` tags, not prerelease).
-            - **Beta** channel: run the *Beta* workflow or push a `beta` prerelease tag.
+            - **Beta** channel: run the *Beta* workflow.
           prerelease: true
           releaseDraft: false
+
+      - name: Commit version bump to main
+        if: success() && github.ref == 'refs/heads/main' && github.ref_type != 'tag'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git commit -m "chore(release): v${VERSION} nightly [skip ci]"
+          git push origin HEAD:main

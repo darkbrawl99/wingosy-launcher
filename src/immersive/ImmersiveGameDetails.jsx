@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
@@ -14,15 +14,47 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogContentText from "@mui/material/DialogContentText";
 import DialogActions from "@mui/material/DialogActions";
 import Tooltip from "@mui/material/Tooltip";
+import IconButton from "@mui/material/IconButton";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
+import ListItemIcon from "@mui/material/ListItemIcon";
+import ListItemText from "@mui/material/ListItemText";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import FavoriteBorderIcon from "@mui/icons-material/FavoriteBorder";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import FolderOpenIcon from "@mui/icons-material/FolderOpen";
+import RefreshIcon from "@mui/icons-material/Refresh";
+import VisibilityOffIcon from "@mui/icons-material/VisibilityOff";
+import SaveIcon from "@mui/icons-material/Save";
+import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
+import MemoryIcon from "@mui/icons-material/Memory";
+import SystemUpdateIcon from "@mui/icons-material/SystemUpdate";
+import AlbumIcon from "@mui/icons-material/Album";
+import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
+import TagIcon from "@mui/icons-material/Tag";
+import FolderSpecialIcon from "@mui/icons-material/FolderSpecial";
+import StarOutlineIcon from "@mui/icons-material/StarOutline";
 import { alpha } from "@mui/material/styles";
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { useAppTheme } from "../ThemeContext";
+import GameScreenshotsSection from "../components/game/GameScreenshotsSection";
+import GameAchievementsSection from "../components/game/GameAchievementsSection";
+import CollectionPickerDialog from "../components/game/CollectionPickerDialog";
+
+function isLocalPath(path) {
+  if (!path) return false;
+  return /^[a-zA-Z]:/.test(path) || path.startsWith("\\") || path.startsWith("/");
+}
+
+function getMediaSrc(url) {
+  if (!url) return null;
+  if (isLocalPath(url)) return convertFileSrc(url);
+  return url;
+}
 
 export default function ImmersiveGameDetails({
   game,
@@ -33,6 +65,7 @@ export default function ImmersiveGameDetails({
   onGameUpdate,
   rommToken,
   rommUrl,
+  retroachievementsEnabled = false,
 }) {
   const { colors } = useAppTheme();
   const [downloading, setDownloading] = useState(false);
@@ -40,6 +73,13 @@ export default function ImmersiveGameDetails({
   const [justDownloaded, setJustDownloaded] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [actionStatus, setActionStatus] = useState(null);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
+  const [collections, setCollections] = useState([]);
+  const [comingSoon, setComingSoon] = useState({ open: false, title: "", detail: "" });
+  const [ratingsDialogOpen, setRatingsDialogOpen] = useState(false);
+  const savesSectionRef = useRef(null);
 
   const isRemoteOnly = (game.sync_state === "remote_only" || game.sync_state === "RemoteOnly") && !justDownloaded;
   const hasLocalFile = (game.local_file_path && game.local_file_path.length > 0) || justDownloaded;
@@ -47,6 +87,8 @@ export default function ImmersiveGameDetails({
   const isLocalGame = !game.romm_id && game.source !== "RomM";
   const canPlay = hasLocalFile || isSynced || isLocalGame || !isRemoteOnly;
   const canDownload = game.romm_id && rommToken && rommUrl;
+
+  const screenshots = Array.isArray(game.screenshot_paths) ? game.screenshot_paths : [];
 
   async function handleDownloadRom() {
     if (!rommToken || !rommUrl) return;
@@ -80,6 +122,70 @@ export default function ImmersiveGameDetails({
       setActionStatus({ type: "error", message: err.message || String(err) });
     }
   }
+
+  async function handleRefreshMetadata() {
+    if (!rommToken || !rommUrl || !game.romm_id) return;
+    try {
+      setMenuAnchor(null);
+      setRefreshing(true);
+      await invoke("refresh_game_metadata", {
+        gameId: game.id,
+        serverUrl: rommUrl,
+        token: rommToken,
+      });
+      if (onGameUpdate) onGameUpdate(game.id);
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  async function handleHideGame() {
+    try {
+      setMenuAnchor(null);
+      await invoke("toggle_game_hidden", { gameId: game.id });
+      if (onGameUpdate) onGameUpdate(game.id);
+      setTimeout(() => onBack(), 800);
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handleOpenLocation() {
+    try {
+      setMenuAnchor(null);
+      await invoke("open_rom_location", { gameId: game.id });
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  function scrollToSaves() {
+    setMenuAnchor(null);
+    savesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function openAddToCollection() {
+    setMenuAnchor(null);
+    try {
+      const cols = await invoke("get_collections");
+      setCollections(cols);
+      setCollectionDialogOpen(true);
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
+  async function handlePickCollection(collectionId) {
+    try {
+      await invoke("add_game_to_collection", { collectionId, gameId: game.id });
+      setActionStatus({ type: "success", message: "Added to collection." });
+    } catch (err) {
+      setActionStatus({ type: "error", message: err.message || String(err) });
+    }
+  }
+
   useEffect(() => {
     function onKeyDown(e) {
       if (e.key === "Escape") {
@@ -99,7 +205,9 @@ export default function ImmersiveGameDetails({
       sx={{
         flex: 1,
         minHeight: 0,
-        overflow: "auto",
+        overflowY: "auto",
+        overflowX: "hidden",
+        overscrollBehavior: "contain",
         p: 5,
         bgcolor: "background.default",
         backgroundImage: `radial-gradient(1000px 380px at 10% -5%, ${alpha(colors.primary, 0.12)} 0%, transparent 52%),
@@ -107,6 +215,7 @@ export default function ImmersiveGameDetails({
       }}
     >
       <Button
+        data-argosy-sound="back"
         startIcon={<ArrowBackIcon />}
         onClick={onBack}
         color="inherit"
@@ -114,6 +223,12 @@ export default function ImmersiveGameDetails({
       >
         Back
       </Button>
+
+      <GameScreenshotsSection
+        urls={screenshots}
+        getMediaSrc={getMediaSrc}
+        isRommGame={Boolean(game.romm_id)}
+      />
 
       <Paper
         elevation={0}
@@ -132,27 +247,163 @@ export default function ImmersiveGameDetails({
               radial-gradient(900px 450px at 85% 10%, ${alpha(colors.primaryLight, 0.14)} 0%, transparent 58%)`,
           }}
         >
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2, flexWrap: "wrap" }}>
-            {platformLabel ? (
-              <Chip
-                label={platformLabel}
-                sx={{
-                  fontWeight: 900,
-                  bgcolor: "rgba(255,255,255,0.08)",
-                  color: "#fff",
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2, flexWrap: "wrap" }} justifyContent="space-between">
+            <Stack direction="row" spacing={2} alignItems="center" sx={{ flexWrap: "wrap" }}>
+              {platformLabel ? (
+                <Chip
+                  label={platformLabel}
+                  sx={{
+                    fontWeight: 900,
+                    bgcolor: "rgba(255,255,255,0.08)",
+                    color: "#fff",
+                  }}
+                />
+              ) : null}
+              {game.is_favorite ? (
+                <Chip
+                  label="Favorite"
+                  sx={{
+                    fontWeight: 900,
+                    bgcolor: "rgba(239,68,68,0.18)",
+                    color: "#fff",
+                  }}
+                />
+              ) : null}
+            </Stack>
+            <IconButton color="inherit" onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="More options">
+              <MoreVertIcon />
+            </IconButton>
+            <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}>
+              {game.romm_id && rommToken && rommUrl && (
+                <MenuItem onClick={scrollToSaves}>
+                  <ListItemIcon>
+                    <SaveIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Manage cached saves" secondary="RomM cloud saves" secondaryTypographyProps={{ variant: "caption" }} />
+                </MenuItem>
+              )}
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setRatingsDialogOpen(true);
                 }}
-              />
-            ) : null}
-            {game.is_favorite ? (
-              <Chip
-                label="Favorite"
-                sx={{
-                  fontWeight: 900,
-                  bgcolor: "rgba(239,68,68,0.18)",
-                  color: "#fff",
+              >
+                <ListItemIcon>
+                  <StarOutlineIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Ratings & status" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Change emulator",
+                    detail: "Use Settings → Emulators (platform defaults column) until per-game overrides exist.",
+                  });
                 }}
-              />
-            ) : null}
+              >
+                <ListItemIcon>
+                  <SportsEsportsIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Change emulator" secondary="From Settings" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({
+                    open: true,
+                    title: "Change core",
+                    detail: "Install cores from Settings → Emulators.",
+                  });
+                }}
+              >
+                <ListItemIcon>
+                  <MemoryIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Change core" secondary="RetroArch" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({ open: true, title: "Updates / DLC", detail: "Not wired yet." });
+                }}
+              >
+                <ListItemIcon>
+                  <SystemUpdateIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Updates / DLC" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({ open: true, title: "Select disc", detail: "Multi-disc support planned." });
+                }}
+              >
+                <ListItemIcon>
+                  <AlbumIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Select disc" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null);
+                  setComingSoon({ open: true, title: "Select variant", detail: "ROM variants planned." });
+                }}
+              >
+                <ListItemIcon>
+                  <SwapHorizIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Select variant" secondary="Coming soon" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem disabled>
+                <ListItemIcon>
+                  <TagIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Title ID" secondary="Not available" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              <MenuItem onClick={openAddToCollection}>
+                <ListItemIcon>
+                  <FolderSpecialIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Add to collection" secondary="Manual collections" secondaryTypographyProps={{ variant: "caption" }} />
+              </MenuItem>
+              {game.romm_id && rommToken && rommUrl && (
+                <MenuItem onClick={handleRefreshMetadata} disabled={refreshing}>
+                  <ListItemIcon>
+                    <RefreshIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={refreshing ? "Refreshing..." : "Refresh game data"}
+                    secondary="From RomM"
+                    secondaryTypographyProps={{ variant: "caption" }}
+                  />
+                </MenuItem>
+              )}
+              <Divider />
+              {hasLocalFile && (
+                <MenuItem onClick={handleOpenLocation}>
+                  <ListItemIcon>
+                    <FolderOpenIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Open ROM Location" />
+                </MenuItem>
+              )}
+              <MenuItem onClick={handleHideGame}>
+                <ListItemIcon>
+                  <VisibilityOffIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Hide Game" />
+              </MenuItem>
+              {hasLocalFile && (
+                <MenuItem onClick={() => { setMenuAnchor(null); setDeleteDialogOpen(true); }} sx={{ color: "error.main" }}>
+                  <ListItemIcon>
+                    <DeleteIcon fontSize="small" color="error" />
+                  </ListItemIcon>
+                  <ListItemText primary="Delete Download" />
+                </MenuItem>
+              )}
+            </Menu>
           </Stack>
 
           <Typography variant="h3" sx={{ fontWeight: 800, letterSpacing: "-0.5px", mb: 1, color: "text.primary" }}>
@@ -161,6 +412,10 @@ export default function ImmersiveGameDetails({
           <Typography variant="body1" color="text.secondary" sx={{ maxWidth: 1100, lineHeight: 1.8 }}>
             {game.summary || "No description available."}
           </Typography>
+
+          <Divider sx={{ my: 3, opacity: 0.12 }} />
+
+          <GameAchievementsSection gameName={game.name} retroAchievementsEnabled={retroachievementsEnabled} />
 
           <Divider sx={{ my: 3, opacity: 0.12 }} />
 
@@ -190,10 +445,7 @@ export default function ImmersiveGameDetails({
             )}
 
             {game.romm_id && !canPlay && (
-              <Tooltip
-                title={!rommToken || !rommUrl ? "Connect to RomM server in Settings to download" : ""}
-                arrow
-              >
+              <Tooltip title={!rommToken || !rommUrl ? "Connect to RomM server in Settings to download" : ""} arrow>
                 <span>
                   <Button
                     variant="contained"
@@ -245,6 +497,18 @@ export default function ImmersiveGameDetails({
               </Button>
             )}
           </Stack>
+
+          {game.romm_id && rommToken && rommUrl ? (
+            <Box ref={savesSectionRef} sx={{ mt: 4 }}>
+              <Divider sx={{ mb: 2, opacity: 0.12 }} />
+              <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                Saves (RomM)
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Use <strong>Manage cached saves</strong> in the menu above to jump here when cloud saves are configured on the server.
+              </Typography>
+            </Box>
+          ) : null}
         </Box>
       </Paper>
 
@@ -253,7 +517,8 @@ export default function ImmersiveGameDetails({
         <DialogContent>
           <DialogContentText>
             This will delete the local ROM file for "{game.name}".
-            {game.romm_id ? " The game will remain in your library (from RomM) and can be re-downloaded."
+            {game.romm_id
+              ? " The game will remain in your library (from RomM) and can be re-downloaded."
               : " This will remove the game from your library completely."}
           </DialogContentText>
         </DialogContent>
@@ -261,6 +526,40 @@ export default function ImmersiveGameDetails({
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleDeleteDownload} color="error" variant="contained">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <CollectionPickerDialog
+        open={collectionDialogOpen}
+        onClose={() => setCollectionDialogOpen(false)}
+        collections={collections}
+        onPick={handlePickCollection}
+        gameName={game.name}
+      />
+
+      <Dialog open={ratingsDialogOpen} onClose={() => setRatingsDialogOpen(false)}>
+        <DialogTitle>Ratings & status</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Per-game backlog and ratings will appear here in a future update.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRatingsDialogOpen(false)} variant="contained">
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={comingSoon.open} onClose={() => setComingSoon((s) => ({ ...s, open: false }))}>
+        <DialogTitle>{comingSoon.title}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{comingSoon.detail}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setComingSoon((s) => ({ ...s, open: false }))} variant="contained">
+            OK
           </Button>
         </DialogActions>
       </Dialog>

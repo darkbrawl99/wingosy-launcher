@@ -13,6 +13,7 @@ import FavoriteIcon from "@mui/icons-material/Favorite";
 import SettingsIcon from "@mui/icons-material/Settings";
 import HomeIcon from "@mui/icons-material/Home";
 import { useAppTheme } from "../ThemeContext";
+import { tauriDragRegionProps, tauriDragRegionSx } from "../utils/isTauri";
 import {
   PLATFORM_COLORS,
   packIconId,
@@ -130,7 +131,14 @@ export default function Sidebar({
         overflow: "hidden",
       }}
     >
-      <Box sx={{ p: 2.5, pb: 1 }}>
+      <Box
+        {...tauriDragRegionProps()}
+        sx={{
+          p: 2.5,
+          pb: 1,
+          ...tauriDragRegionSx,
+        }}
+      >
         <Stack direction="row" alignItems="center" spacing={1.5}>
           <LauncherIcon size={40} />
           <Box sx={{ minWidth: 0 }}>
@@ -196,7 +204,10 @@ export default function Sidebar({
         sx={{
           px: 1,
           flex: 1,
-          overflow: "auto",
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
           "&::-webkit-scrollbar": { width: 4 },
           "&::-webkit-scrollbar-thumb": {
             bgcolor: "rgba(255,255,255,0.1)",

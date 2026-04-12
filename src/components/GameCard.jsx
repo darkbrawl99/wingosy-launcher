@@ -57,6 +57,7 @@ export default function GameCard({ game, onClick, onToggleFavorite, onLaunch }) 
 
   return (
     <Box
+      role="button"
       onClick={onClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}

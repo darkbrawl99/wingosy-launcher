@@ -27,7 +27,14 @@ pub struct Game {
     // User data
     pub is_favorite: bool,
     pub is_hidden: bool,
+    /// IGDB aggregated / total rating from RomM metadata (typically 0–100 when present).
     pub user_rating: Option<f32>,
+    /// Local library status: `backlog`, `playing`, `completed`, `on_hold`, `dropped`, or unset.
+    pub library_status: Option<String>,
+    /// Personal 1–5 stars; `0` means unset.
+    pub personal_rating: i32,
+    /// Personal difficulty 1–5; `0` means unset.
+    pub personal_difficulty: i32,
     pub last_played_at: Option<DateTime<Utc>>,
     pub play_count: i32,
     pub play_time_minutes: i32,
@@ -57,6 +64,9 @@ impl Game {
             is_favorite: false,
             is_hidden: false,
             user_rating: None,
+            library_status: None,
+            personal_rating: 0,
+            personal_difficulty: 0,
             last_played_at: None,
             play_count: 0,
             play_time_minutes: 0,

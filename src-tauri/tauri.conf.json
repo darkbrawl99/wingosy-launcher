@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "Wingosy Launcher",
-    "version": "0.0.1"
+    "version": "0.0.0"
   },
   "tauri": {
     "allowlist": {
@@ -17,7 +17,8 @@
         "unmaximize": true,
         "maximize": true,
         "minimize": true,
-        "close": true
+        "close": true,
+        "startDragging": true
       },
       "shell": {
         "all": false,
@@ -36,11 +37,15 @@
       },
       "fs": {
         "all": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       },
       "protocol": {
         "asset": true,
-        "assetScope": ["**"]
+        "assetScope": [
+          "**"
+        ]
       }
     },
     "bundle": {

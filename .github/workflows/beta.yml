@@ -1,7 +1,8 @@
 # Beta channel: prerelease builds (tags contain `beta` but not `nightly`).
 # The app’s **Beta** update track picks the newest matching GitHub prerelease.
 #
-# Run from Actions → Beta → Run workflow when you want a beta drop.
+# Version: each run bumps MINOR and resets PATCH (0.1.0) per scripts/bump-version.mjs,
+# then commits to `main` when the workflow runs on `main`.
 
 name: Beta
 
@@ -9,13 +10,17 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'Git ref to build (e.g. main or a release branch)'
+        description: 'Git ref to build (default main)'
         required: false
         default: 'main'
         type: string
 
 permissions:
   contents: write
+
+concurrency:
+  group: beta-${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -39,6 +44,14 @@ jobs:
       - name: Enable Corepack
         run: corepack enable
 
+      - name: Bump app version (beta — MINOR +1, PATCH → 0)
+        id: ver
+        shell: bash
+        run: |
+          set -e
+          VER=$(node scripts/bump-version.mjs beta)
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
       - name: Setup Rust
         uses: dtolnay/rust-action@stable
         with:
@@ -58,11 +71,25 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ env.BETA_TAG }}
-          releaseName: 'Wingosy Launcher Beta'
+          releaseName: 'Wingosy Launcher Beta v${{ steps.ver.outputs.version }}'
           releaseBody: |
+            App version **v${{ steps.ver.outputs.version }}** (MINOR bump; nightly PATCH counter reset).
+
             **Beta** pre-release. Testing builds before stable.
 
             - **Stable**: [Latest](https://github.com/yash-1o1/wingosy-launcher/releases/latest)
             - **Nightly**: scheduled *Nightly* workflow
           prerelease: true
           releaseDraft: false
+
+      - name: Commit version bump to main
+        if: success() && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+          git commit -m "chore(release): v${VERSION} beta [skip ci]"
+          git push origin HEAD:main

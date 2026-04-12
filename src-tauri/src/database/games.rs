@@ -16,6 +16,7 @@ impl Database {
                 summary, developer, publisher, release_year, genres, player_count,
                 cover_path, screenshot_paths,
                 is_favorite, is_hidden, user_rating,
+                library_status, personal_rating, personal_difficulty,
                 last_played_at, play_count, play_time_minutes,
                 sync_state, local_file_path
             ) VALUES (
@@ -24,7 +25,8 @@ impl Database {
                 ?12, ?13,
                 ?14, ?15, ?16,
                 ?17, ?18, ?19,
-                ?20, ?21
+                ?20, ?21, ?22,
+                ?23, ?24
             )
             "#,
             params![
@@ -44,6 +46,9 @@ impl Database {
                 game.is_favorite,
                 game.is_hidden,
                 game.user_rating,
+                game.library_status.clone(),
+                game.personal_rating,
+                game.personal_difficulty,
                 game.last_played_at.map(|d| d.to_rfc3339()),
                 game.play_count,
                 game.play_time_minutes,
@@ -78,11 +83,14 @@ impl Database {
                 is_favorite = ?15,
                 is_hidden = ?16,
                 user_rating = ?17,
-                last_played_at = ?18,
-                play_count = ?19,
-                play_time_minutes = ?20,
-                sync_state = ?21,
-                local_file_path = ?22,
+                library_status = ?18,
+                personal_rating = ?19,
+                personal_difficulty = ?20,
+                last_played_at = ?21,
+                play_count = ?22,
+                play_time_minutes = ?23,
+                sync_state = ?24,
+                local_file_path = ?25,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = ?1
             "#,
@@ -104,6 +112,9 @@ impl Database {
                 game.is_favorite,
                 game.is_hidden,
                 game.user_rating,
+                game.library_status.clone(),
+                game.personal_rating,
+                game.personal_difficulty,
                 game.last_played_at.map(|d| d.to_rfc3339()),
                 game.play_count,
                 game.play_time_minutes,
@@ -301,6 +312,9 @@ impl Database {
                     updated.local_file_path = existing.local_file_path.clone();
                     updated.sync_state = crate::models::SyncState::Synced;
                 }
+                updated.library_status = existing.library_status.clone();
+                updated.personal_rating = existing.personal_rating;
+                updated.personal_difficulty = existing.personal_difficulty;
                 self.update_game(&updated)?;
                 return Ok(existing.id);
             }
@@ -337,6 +351,14 @@ impl Database {
         let last_played_str: Option<String> = row.get("last_played_at")?;
         let last_played_at = last_played_str.and_then(|s: String| DateTime::parse_from_rfc3339(&s).ok().map(|d| d.with_timezone(&Utc)));
 
+        let library_status: Option<String> = row.get::<_, Option<String>>("library_status")?;
+        let personal_rating: i32 = row
+            .get::<_, Option<i32>>("personal_rating")?
+            .unwrap_or(0);
+        let personal_difficulty: i32 = row
+            .get::<_, Option<i32>>("personal_difficulty")?
+            .unwrap_or(0);
+
         Ok(Game {
             id: row.get("id")?,
             platform_id: row.get("platform_id")?,
@@ -355,6 +377,9 @@ impl Database {
             is_favorite: row.get("is_favorite")?,
             is_hidden: row.get("is_hidden")?,
             user_rating: row.get("user_rating")?,
+            library_status,
+            personal_rating,
+            personal_difficulty,
             last_played_at,
             play_count: row.get("play_count")?,
             play_time_minutes: row.get("play_time_minutes")?,
@@ -537,6 +562,9 @@ mod tests {
             is_favorite: false,
             is_hidden: false,
             user_rating: None,
+            library_status: None,
+            personal_rating: 0,
+            personal_difficulty: 0,
             last_played_at: None,
             play_count: 0,
             play_time_minutes: 0,

@@ -1,8 +1,8 @@
 use std::path::Path;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api::{RomMClient, download::DownloadManager};
-use crate::config::AppConfig;
+use crate::config::{AppConfig, UpdateChannel};
 use crate::database::Database;
 use crate::emulators::{EmulatorLauncher, LaunchCommand, LaunchResult};
 use crate::emulators::detection::{detect_installed_emulators, find_retroarch_cores};
@@ -399,6 +399,35 @@ pub async fn get_config() -> Result<AppConfig, String> {
 #[tauri::command]
 pub async fn save_config(config: AppConfig) -> Result<(), String> {
     config.save().map_err(|e| e.to_string())
+}
+
+/// Sorted paths to playable audio files in a folder (for Immersive ambient BGM).
+#[tauri::command]
+pub fn list_ambient_audio_files(dir: String) -> Result<Vec<String>, String> {
+    use std::path::PathBuf;
+    let p = PathBuf::from(dir);
+    if !p.is_dir() {
+        return Err("Not a directory".to_string());
+    }
+    const EXTS: &[&str] = &["mp3", "ogg", "wav", "flac", "m4a", "opus"];
+    let mut out: Vec<String> = std::fs::read_dir(&p)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let path = e.path();
+            if !path.is_file() {
+                return None;
+            }
+            let ext = path.extension()?.to_str()?.to_lowercase();
+            if EXTS.iter().any(|&x| x == ext.as_str()) {
+                Some(path.to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        })
+        .collect();
+    out.sort();
+    Ok(out)
 }
 
 #[tauri::command]
@@ -847,7 +876,10 @@ pub async fn refresh_game_metadata(
     updated_game.play_time_minutes = game.play_time_minutes;
     updated_game.last_played_at = game.last_played_at;
     updated_game.local_file_path = game.local_file_path.clone();
-    
+    updated_game.library_status = game.library_status.clone();
+    updated_game.personal_rating = game.personal_rating;
+    updated_game.personal_difficulty = game.personal_difficulty;
+
     if game.local_file_path.is_some() {
         updated_game.sync_state = crate::models::SyncState::Synced;
     }
@@ -911,10 +943,48 @@ pub async fn get_game_details(game_id: i64) -> Result<Game, String> {
         .ok_or_else(|| "Game not found".to_string())
 }
 
+/// Persist library status and personal 1–5 ratings (0 = unset for ratings).
+#[tauri::command]
+pub async fn update_game_personal_fields(
+    game_id: i64,
+    library_status: Option<String>,
+    personal_rating: i32,
+    personal_difficulty: i32,
+) -> Result<Game, String> {
+    let db = Database::open().map_err(|e| e.to_string())?;
+    let mut game = db
+        .get_game(game_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Game not found".to_string())?;
+
+    game.library_status = library_status.and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() {
+            None
+        } else {
+            Some(t.to_string())
+        }
+    });
+    game.personal_rating = personal_rating.clamp(0, 5);
+    game.personal_difficulty = personal_difficulty.clamp(0, 5);
+
+    db.update_game(&game).map_err(|e| e.to_string())?;
+    db.get_game(game_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Game not found".to_string())
+}
+
 #[tauri::command]
 pub async fn get_collections() -> Result<Vec<Collection>, String> {
     let db = Database::open().map_err(|e| e.to_string())?;
     db.get_all_collections().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn add_game_to_collection(collection_id: i64, game_id: i64) -> Result<(), String> {
+    let db = Database::open().map_err(|e| e.to_string())?;
+    db.add_game_to_collection(collection_id, game_id)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1349,9 +1419,318 @@ pub async fn get_emulators_for_platform(platform_id: String) -> Result<Vec<Emula
     Ok(matching)
 }
 
+/// GitHub repo used for "latest release" update checks (see README Releases link).
+const UPDATE_CHECK_REPO: &str = "yash-1o1/wingosy-launcher";
+
+#[derive(Debug, Serialize)]
+pub struct UpdateCheckResult {
+    pub current_version: String,
+    pub latest_version: Option<String>,
+    pub is_update_available: bool,
+    pub release_url: Option<String>,
+    pub error: Option<String>,
+    /// Channel that was queried (`stable`, `beta`, `nightly`).
+    pub channel: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    html_url: String,
+    #[serde(default)]
+    prerelease: bool,
+}
+
+fn strip_version_prefix(s: &str) -> &str {
+    s.trim()
+        .strip_prefix('v')
+        .or_else(|| s.trim().strip_prefix('V'))
+        .unwrap_or(s.trim())
+}
+
+fn parse_semver_triple(s: &str) -> Option<(u32, u32, u32)> {
+    let s = strip_version_prefix(s);
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch_part = parts.next()?;
+    let patch: String = patch_part
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    let patch = if patch.is_empty() { 0 } else { patch.parse().ok()? };
+    Some((major, minor, patch))
+}
+
+fn remote_version_is_newer(latest_tag: &str, current: &str) -> bool {
+    match (
+        parse_semver_triple(latest_tag),
+        parse_semver_triple(current),
+    ) {
+        (Some(l), Some(c)) => l > c,
+        _ => strip_version_prefix(latest_tag) != strip_version_prefix(current),
+    }
+}
+
+fn parse_update_channel(s: &str) -> UpdateChannel {
+    match s.to_lowercase().as_str() {
+        "beta" => UpdateChannel::Beta,
+        "nightly" => UpdateChannel::Nightly,
+        _ => UpdateChannel::Stable,
+    }
+}
+
+fn channel_label(c: UpdateChannel) -> &'static str {
+    match c {
+        UpdateChannel::Stable => "stable",
+        UpdateChannel::Beta => "beta",
+        UpdateChannel::Nightly => "nightly",
+    }
+}
+
+/// Picks the newest prerelease whose tag matches the channel (see `.github/workflows/` docs).
+fn pick_prerelease_track(releases: &[GithubRelease], channel: UpdateChannel) -> Option<&GithubRelease> {
+    let tag_matches = |r: &GithubRelease, needle: &str| {
+        let t = r.tag_name.to_lowercase();
+        t.contains(needle)
+    };
+    for r in releases {
+        if !r.prerelease {
+            continue;
+        }
+        let ok = match channel {
+            UpdateChannel::Nightly => tag_matches(r, "nightly"),
+            UpdateChannel::Beta => tag_matches(r, "beta") && !tag_matches(r, "nightly"),
+            UpdateChannel::Stable => false,
+        };
+        if ok {
+            return Some(r);
+        }
+    }
+    None
+}
+
+fn gh_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .user_agent(concat!(
+            "WingosyLauncher/",
+            env!("CARGO_PKG_VERSION"),
+            " (https://github.com/yash-1o1/wingosy-launcher)"
+        ))
+        .build()
+        .map_err(|e| format!("HTTP client: {}", e))
+}
+
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub async fn check_for_app_update(channel: String) -> UpdateCheckResult {
+    let current_version = get_app_version();
+    let ch = parse_update_channel(&channel);
+    let ch_label = channel_label(ch).to_string();
+
+    let client = match gh_client() {
+        Ok(c) => c,
+        Err(e) => {
+            return UpdateCheckResult {
+                current_version,
+                latest_version: None,
+                is_update_available: false,
+                release_url: None,
+                error: Some(e),
+                channel: ch_label,
+            };
+        }
+    };
+
+    if ch == UpdateChannel::Stable {
+        let url = format!(
+            "https://api.github.com/repos/{}/releases/latest",
+            UPDATE_CHECK_REPO
+        );
+        let response = match client.get(&url).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                return UpdateCheckResult {
+                    current_version,
+                    latest_version: None,
+                    is_update_available: false,
+                    release_url: None,
+                    error: Some(format!("Request failed: {}", e)),
+                    channel: ch_label,
+                };
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            tracing::warn!(
+                "[Updater] GitHub API error: {} — {}",
+                status,
+                body.chars().take(200).collect::<String>()
+            );
+            return UpdateCheckResult {
+                current_version,
+                latest_version: None,
+                is_update_available: false,
+                release_url: None,
+                error: Some(format!("GitHub returned {}", status)),
+                channel: ch_label,
+            };
+        }
+
+        let release: GithubRelease = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                return UpdateCheckResult {
+                    current_version,
+                    latest_version: None,
+                    is_update_available: false,
+                    release_url: None,
+                    error: Some(format!("Bad release JSON: {}", e)),
+                    channel: ch_label,
+                };
+            }
+        };
+
+        let latest = release.tag_name.clone();
+        let is_newer = remote_version_is_newer(&latest, &current_version);
+        return UpdateCheckResult {
+            current_version,
+            latest_version: Some(latest.clone()),
+            is_update_available: is_newer,
+            release_url: Some(release.html_url),
+            error: None,
+            channel: ch_label,
+        };
+    }
+
+    // Beta / Nightly: walk recent releases (newest first per GitHub API).
+    let url = format!(
+        "https://api.github.com/repos/{}/releases?per_page=40",
+        UPDATE_CHECK_REPO
+    );
+    let response = match client.get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return UpdateCheckResult {
+                current_version,
+                latest_version: None,
+                is_update_available: false,
+                release_url: None,
+                error: Some(format!("Request failed: {}", e)),
+                channel: ch_label,
+            };
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        return UpdateCheckResult {
+            current_version,
+            latest_version: None,
+            is_update_available: false,
+            release_url: None,
+            error: Some(format!("GitHub returned {}", status)),
+            channel: ch_label,
+        };
+    }
+
+    let releases: Vec<GithubRelease> = match response.json().await {
+        Ok(r) => r,
+        Err(e) => {
+            return UpdateCheckResult {
+                current_version,
+                latest_version: None,
+                is_update_available: false,
+                release_url: None,
+                error: Some(format!("Bad release list JSON: {}", e)),
+                channel: ch_label,
+            };
+        }
+    };
+
+    let picked = pick_prerelease_track(&releases, ch);
+    let Some(release) = picked else {
+        let hint = match ch {
+            UpdateChannel::Beta => "No beta prerelease found (tags should include \"beta\", GitHub prerelease: true).",
+            UpdateChannel::Nightly => "No nightly prerelease found (tags should include \"nightly\", GitHub prerelease: true).",
+            UpdateChannel::Stable => unreachable!(),
+        };
+        return UpdateCheckResult {
+            current_version,
+            latest_version: None,
+            is_update_available: false,
+            release_url: None,
+            error: Some(hint.to_string()),
+            channel: ch_label,
+        };
+    };
+
+    let latest = release.tag_name.clone();
+    let is_newer = remote_version_is_newer(&latest, &current_version);
+    UpdateCheckResult {
+        current_version,
+        latest_version: Some(latest.clone()),
+        is_update_available: is_newer,
+        release_url: Some(release.html_url.clone()),
+        error: None,
+        channel: ch_label,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_remote_version_is_newer_semver() {
+        assert!(super::remote_version_is_newer("v0.0.2", "0.0.1"));
+        assert!(!super::remote_version_is_newer("v0.0.1", "0.0.1"));
+        assert!(super::remote_version_is_newer("1.0.0", "0.9.9"));
+    }
+
+    #[test]
+    fn test_pick_prerelease_nightly_prefers_first_match() {
+        use crate::config::UpdateChannel;
+        let releases = vec![
+            super::GithubRelease {
+                tag_name: "v1.0.0".to_string(),
+                html_url: "https://a".to_string(),
+                prerelease: false,
+            },
+            super::GithubRelease {
+                tag_name: "nightly-99".to_string(),
+                html_url: "https://n".to_string(),
+                prerelease: true,
+            },
+        ];
+        let p = super::pick_prerelease_track(&releases, UpdateChannel::Nightly);
+        assert_eq!(p.unwrap().tag_name, "nightly-99");
+    }
+
+    #[test]
+    fn test_pick_prerelease_beta_skips_nightly_tag() {
+        use crate::config::UpdateChannel;
+        let releases = vec![
+            super::GithubRelease {
+                tag_name: "nightly-1".to_string(),
+                html_url: "https://n".to_string(),
+                prerelease: true,
+            },
+            super::GithubRelease {
+                tag_name: "beta-2".to_string(),
+                html_url: "https://b".to_string(),
+                prerelease: true,
+            },
+        ];
+        let p = super::pick_prerelease_track(&releases, UpdateChannel::Beta);
+        assert_eq!(p.unwrap().tag_name, "beta-2");
+    }
 
     #[test]
     fn test_normalize_for_match_basic() {

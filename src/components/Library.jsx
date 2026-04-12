@@ -10,6 +10,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import CloudSyncIcon from "@mui/icons-material/CloudSync";
 import GameCard from "./GameCard";
+import { tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
 
 export default function Library({
   games,
@@ -38,10 +39,27 @@ export default function Library({
         justifyContent="space-between"
         sx={{ mb: 3 }}
       >
-        <Typography variant="h4" component="h1" sx={{ flexShrink: 0, lineHeight: 1.2 }}>
+        <Typography
+          variant="h4"
+          component="h1"
+          {...tauriDragRegionProps()}
+          sx={{ flexShrink: 0, lineHeight: 1.2, ...tauriDragRegionSx }}
+        >
           Library
         </Typography>
+        <Box
+          {...tauriDragRegionProps()}
+          sx={{
+            display: { xs: "none", sm: "block" },
+            flex: 1,
+            minWidth: 16,
+            minHeight: 40,
+            alignSelf: "stretch",
+            ...tauriDragRegionSx,
+          }}
+        />
         <TextField
+          {...tauriNoDragProps()}
           size="small"
           placeholder="Search games..."
           value={searchQuery}
@@ -50,6 +68,7 @@ export default function Library({
             width: "100%",
             maxWidth: { sm: 360 },
             flexShrink: 0,
+            ...tauriNoDragSx,
           }}
           InputProps={{
             startAdornment: (

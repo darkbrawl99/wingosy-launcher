@@ -1,7 +1,7 @@
 {
   "name": "wingosy-launcher",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.0",
   "packageManager": "npm@11.12.1",
   "type": "module",
   "engines": {
@@ -31,7 +31,9 @@
     "test:rust": "cd src-tauri && cargo test -- --nocapture",
     "test:rust:unit": "cd src-tauri && cargo test --bin wingosy-launcher -- --nocapture",
     "test:rust:critical": "cd src-tauri && cargo test critical -- --nocapture",
-    "test:e2e:immersive": "wdio run wdio.conf.js --spec e2e-webdriver/immersive.spec.js"
+    "test:e2e:immersive": "wdio run wdio.conf.js --spec e2e-webdriver/immersive.spec.js",
+    "version:set": "node scripts/set-version.mjs",
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",

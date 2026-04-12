@@ -26,7 +26,7 @@ describe('RetroArch Cores - Prerequisites', () => {
   });
 
   it('should detect RetroArch installation status', async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Look for RetroArch in the installed section
@@ -60,7 +60,7 @@ describe('RetroArch Cores - Unified Emulators Section', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
   });
 
@@ -164,7 +164,7 @@ describe('RetroArch Cores - Download Workflow', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Expand RetroArch cores section
@@ -288,7 +288,7 @@ describe('RetroArch Cores - Error Handling', function() {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
     
     // Expand RetroArch cores section
@@ -387,7 +387,7 @@ describe('RetroArch Cores - RetroArch Not Installed', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
   });
 
@@ -439,7 +439,7 @@ describe('RetroArch Cores - Integration with Emulators', () => {
   });
 
   beforeEach(async () => {
-    await goToSettings();
+    await goToSettings('emulators');
     await browser.pause(2000);
   });
 
