@@ -1,0 +1,77 @@
+# Nightly channel: prerelease builds (GitHub tag name contains `nightly`).
+# The app’s **Nightly** update track picks the newest matching prerelease.
+#
+# Ways to publish:
+# - Push a tag matching `nightly*` (e.g. `nightly-2026-04-11`, `nightly-v0.2.0`) — release uses that tag name.
+# - Weekday schedule (tag `nightly-<run_id>`) or Actions → Nightly → Run workflow (same).
+
+name: Nightly
+
+on:
+  push:
+    tags:
+      - 'nightly*'
+  schedule:
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (default main)'
+        required: false
+        default: 'main'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      # Tag push: use the pushed tag. Otherwise: nightly-<run_id> for schedule/manual.
+      NIGHTLY_TAG: ${{ github.ref_type == 'tag' && github.ref_name || format('nightly-{0}', github.run_id) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.ref || 'main') || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri (nightly prerelease)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.NIGHTLY_TAG }}
+          releaseName: 'Wingosy Launcher Nightly — ${{ env.NIGHTLY_TAG }}'
+          releaseBody: |
+            Automated **nightly** pre-release. May be unstable.
+
+            - **Tag push:** push a tag matching `nightly*` (e.g. `git tag nightly-$(date +%F) && git push origin nightly-…`) to publish this track without waiting for the schedule.
+            - **Stable** channel: [Latest release](https://github.com/yash-1o1/wingosy-launcher/releases/latest) (`v*` tags, not prerelease).
+            - **Beta** channel: run the *Beta* workflow or push a `beta` prerelease tag.
+          prerelease: true
+          releaseDraft: false

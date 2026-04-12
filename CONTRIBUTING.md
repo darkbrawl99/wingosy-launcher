@@ -27,6 +27,7 @@ cargo -v
 | `failed to get cargo metadata: program not found` | **Cargo** is not on `Path` (Tauri needs Rust) | Add `%USERPROFILE%\.cargo\bin` (see line above), then `cargo -v`. Install Rust via `winget` / rustup if needed. |
 | No window yet, only compile logs | First **debug** build of `src-tauri` can take **30–120+ seconds** | Wait until you see **`Finished` `dev` profile** and the log line **Starting Wingosy Launcher**; check the taskbar for the window. |
 | Only the browser / `localhost:5173` | You ran **`npm run dev:web`** instead of the full app | Use **`npm run tauri dev`** (or **`npm run dev`**, which is the same) so the **native** window opens. |
+| Can’t drag the frameless window / title bar feels “dead” | Vite **HMR** doesn’t reload **`tauri.conf.json`** or the **Rust** shell; `-webkit-app-region` can also lag until a full reload | **Stop** `tauri dev` (Ctrl+C), start it again. After changing **`src-tauri/tauri.conf.json`** (e.g. `startDragging`), you must restart so the native binary picks up the new allowlist. |
 
 Install if missing:
 
@@ -67,6 +68,36 @@ npm run tauri dev
 - Use this when you care about **production-like** speed, installers, or **E2E** tests that target the release app.
 
 For everyday UI work, use **`tauri dev`**. Use a **release** build when you need to match what users install.
+
+### Release channels (stable / beta / nightly)
+
+The in-app **Updates** settings use GitHub’s API to compare your build to the correct **track**:
+
+| Channel | GitHub source | CI workflow |
+|--------|----------------|-------------|
+| **Stable** | Latest **non-prerelease** release (`/releases/latest`) | [`.github/workflows/release.yml`](.github/workflows/release.yml) — tag `v*` **without** `beta` or `nightly` in the name (e.g. `v0.2.0`) |
+| **Beta** | Newest **prerelease** whose tag contains `beta` and not `nightly` | [`.github/workflows/beta.yml`](.github/workflows/beta.yml) — manual dispatch; tags like `beta-<run_id>` |
+| **Nightly** | Newest **prerelease** whose tag contains `nightly` | [`.github/workflows/nightly.yml`](.github/workflows/nightly.yml) — push a tag matching `nightly*` (e.g. `nightly-0.0.1`, `nightly-2026-04-11`), **or** weekday schedule / manual dispatch (`nightly-<run_id>`) |
+
+Pre-release workflows set **`prerelease: true`** so they do not replace **stable** on `/releases/latest`. Bump `package.json` / `Cargo.toml` / `tauri.conf.json` before **stable** `v*` tags as you do today.
+
+### Publishing a nightly (e.g. first `0.0.1`)
+
+Installer and updater metadata use the version in **`package.json`**, **`src-tauri/Cargo.toml`**, and **`src-tauri/tauri.conf.json`** — keep them in sync (`main` is already **0.0.1**).
+
+1. **Merge [`nightly.yml`](.github/workflows/nightly.yml) to `main`** on GitHub (without it, nothing runs for this channel).
+2. **Tag and push** — any tag matching `nightly*` triggers a build from that tag:
+
+   ```bash
+   git checkout main
+   git pull origin main
+   git tag nightly-0.0.1
+   git push origin nightly-0.0.1
+   ```
+
+3. **Actions** → **Nightly** → open the run for `nightly-0.0.1`; when it finishes, **Releases** shows a new prerelease. The in-app **Nightly** update track picks the newest prerelease whose tag contains `nightly`.
+
+**No tag:** **Actions** → **Nightly** → **Run workflow** (builds `main`, publishes as `nightly-<run_id>`). The weekday cron does the same.
 
 ## Project Structure
 

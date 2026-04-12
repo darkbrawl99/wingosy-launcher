@@ -1,0 +1,68 @@
+# Beta channel: prerelease builds (tags contain `beta` but not `nightly`).
+# The app’s **Beta** update track picks the newest matching GitHub prerelease.
+#
+# Run from Actions → Beta → Run workflow when you want a beta drop.
+
+name: Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build (e.g. main or a release branch)'
+        required: false
+        default: 'main'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      BETA_TAG: beta-${{ github.run_id }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || 'main' }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Rust
+        uses: dtolnay/rust-action@stable
+        with:
+          targets: ${{ env.TARGET }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri (beta prerelease)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.BETA_TAG }}
+          releaseName: 'Wingosy Launcher Beta'
+          releaseBody: |
+            **Beta** pre-release. Testing builds before stable.
+
+            - **Stable**: [Latest](https://github.com/yash-1o1/wingosy-launcher/releases/latest)
+            - **Nightly**: scheduled *Nightly* workflow
+          prerelease: true
+          releaseDraft: false
