@@ -101,6 +101,13 @@ If **GitHub Actions** is turned off, tags alone do not attach installers. Use an
 6. **Nightly / Beta:** check **pre-release**, and use a tag that matches that channel (e.g. `nightly-*` or `beta-*`; see the table above).
 7. **Upload** the installer(s), publish the release.
 
+**GitHub CLI:** Install from [cli.github.com](https://cli.github.com/) and run `gh auth login` once. On Windows, if `gh` is not on your `PATH`, use `C:\Program Files\GitHub CLI\gh.exe`. Publish a release from an **existing** tag (example stable):
+
+```bash
+gh release create v0.0.1 --repo YOUR_USER/wingosy-launcher --title "Wingosy Launcher v0.0.1" --notes "…" --latest
+# Attach installers after building:  gh release upload v0.0.1 path/to/setup.exe --repo YOUR_USER/wingosy-launcher
+```
+
 The in-app updater compares your running build to **GitHub Releases** metadata; it does not require Actions to have produced the assets, only that the **release + tag + files** exist.
 
 ### App versioning (automated in CI)
