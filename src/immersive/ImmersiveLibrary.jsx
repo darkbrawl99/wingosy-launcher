@@ -13,6 +13,8 @@ import { useAppTheme } from "../ThemeContext";
 
 const DEFAULT_COLUMNS = 6;
 
+const SECTIONS = ["all", "favorites", "recent"];
+
 function byLastPlayedDesc(a, b) {
   const ax = a.last_played_at || "";
   const bx = b.last_played_at || "";
@@ -31,6 +33,7 @@ export default function ImmersiveLibrary({
 }) {
   const [section, setSection] = useState("all"); // all | favorites | recent
   const gridRef = useRef(null);
+  const rootRef = useRef(null);
   const { colors } = useAppTheme();
 
   const favorites = useMemo(
@@ -56,6 +59,22 @@ export default function ImmersiveLibrary({
     }
   }, [selectedIndex, visibleGames.length, onSelectedIndexChange]);
 
+  useEffect(() => {
+    // Ensure keyboard navigation works immediately in Immersive mode.
+    // Some WebView/Tauri focus paths don't naturally focus this container.
+    rootRef.current?.focus?.();
+  }, [section]);
+
+  function cycleSection(delta) {
+    const idx = SECTIONS.indexOf(section);
+    const next = SECTIONS[(idx + delta + SECTIONS.length) % SECTIONS.length] || "all";
+    setSection(next);
+    onSelectedIndexChange(0);
+    rootRef.current?.focus?.();
+    const el = gridRef.current?.querySelector?.(`[data-immersive-index="0"]`);
+    el?.focus?.();
+  }
+
   function handleKeyDown(e) {
     if (e.key === "F11") {
       // Let parent handler deal with it.
@@ -63,8 +82,25 @@ export default function ImmersiveLibrary({
     }
 
     if (e.key === "Escape") {
+      // Handled on `window` in `ImmersiveModeApp` (exit immersive / back).
+      return;
+    }
+
+    if (e.key === "s" || e.key === "S") {
       e.preventDefault();
-      onExitImmersive();
+      onOpenSettings();
+      return;
+    }
+
+    if (e.key === "PageUp") {
+      e.preventDefault();
+      cycleSection(-1);
+      return;
+    }
+
+    if (e.key === "PageDown") {
+      e.preventDefault();
+      cycleSection(1);
       return;
     }
 
@@ -109,7 +145,11 @@ export default function ImmersiveLibrary({
     <Box
       data-testid="immersive-library"
       tabIndex={0}
+      ref={rootRef}
       onKeyDown={handleKeyDown}
+      onPointerDown={() => {
+        rootRef.current?.focus?.();
+      }}
       sx={{
         flex: 1,
         minHeight: 0,

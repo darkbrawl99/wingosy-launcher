@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useState, useRef } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
@@ -185,20 +185,6 @@ export default function ImmersiveGameDetails({
       setActionStatus({ type: "error", message: err.message || String(err) });
     }
   }
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onBack();
-      }
-      if (e.key === "Enter") {
-        onLaunch(game.id);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [game.id, onBack, onLaunch]);
 
   return (
     <Box

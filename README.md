@@ -2,7 +2,6 @@
 
 [![Build](https://img.shields.io/github/actions/workflow/status/yash-1o1/wingosy-launcher/nightly.yml?branch=main&label=build&logo=github)](https://github.com/yash-1o1/wingosy-launcher/actions/workflows/nightly.yml?query=branch%3Amain)
 [![Release](https://img.shields.io/github/v/release/yash-1o1/wingosy-launcher?label=release)](https://github.com/yash-1o1/wingosy-launcher/releases/latest)
-[![License](https://img.shields.io/badge/license-GPL--3.0-blue)](README.md#license)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](README.md#requirements)
 
 A Windows game launcher with RomM integration. Inspired by [Argosy Launcher](https://github.com/rommapp/argosy-launcher), with the goal of closely following Argosy's feature implementations.
@@ -34,7 +33,3 @@ RetroArch, Dolphin, PCSX2, RPCS3, PPSSPP, DuckStation, Cemu, Eden, mGBA, melonDS
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
-
-## License
-
-GPL-3.0

@@ -4,8 +4,10 @@ import Settings from "../components/Settings";
 import AmbientAudioPlayer from "./AmbientAudioPlayer";
 import ImmersiveLibrary from "./ImmersiveLibrary";
 import ImmersiveGameDetails from "./ImmersiveGameDetails";
+import ImmersiveHintBar from "./ImmersiveHintBar";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useFullscreen } from "./useFullscreen";
+import { useGamepadKeyboardMapper } from "./useGamepadKeyboardMapper";
 
 export default function ImmersiveModeApp({
   onExit,
@@ -29,6 +31,7 @@ export default function ImmersiveModeApp({
   const [audioCfg, setAudioCfg] = useState(null);
   const [retroachievementsEnabled, setRetroachievementsEnabled] = useState(false);
   const hasLoadedOnce = useRef(false);
+  const [showHints, setShowHints] = useState(true);
 
   // Match desktop `GameDetails` Chip: platform?.name || game.platform_id (not short_name-first / uppercase).
   const platformDisplayNameById = useMemo(() => {
@@ -57,6 +60,8 @@ export default function ImmersiveModeApp({
       }
     },
   });
+
+  useGamepadKeyboardMapper({ enabled: true });
 
   const loadData = useCallback(async () => {
     try {
@@ -103,22 +108,7 @@ export default function ImmersiveModeApp({
     }
   }, [displayCfg.big_picture, onExit, setFullscreen]);
 
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "F11") {
-        e.preventDefault();
-        toggleFullscreen();
-      }
-      if (e.key === "Escape" && view === "library") {
-        e.preventDefault();
-        handleExit();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [toggleFullscreen, view]);
-
-  async function handleExit() {
+  const handleExit = useCallback(async () => {
     try {
       await setFullscreen(false);
     } catch {
@@ -130,9 +120,9 @@ export default function ImmersiveModeApp({
       // ignore
     }
     if (onExit) onExit();
-  }
+  }, [onExit, persistDisplay, setFullscreen]);
 
-  async function handleLaunchGame(gameId) {
+  const handleLaunchGame = useCallback(async (gameId) => {
     try {
       const result = await invoke("launch_game", { gameId });
       if (!result.success && result.error) setError(result.error);
@@ -140,7 +130,55 @@ export default function ImmersiveModeApp({
     } catch (err) {
       setError(err?.message || String(err));
     }
-  }
+  }, [loadData]);
+
+  useEffect(() => {
+    function shouldDeferImmersiveHotkey(e) {
+      const t = e.target;
+      if (t && typeof t.closest === "function") {
+        return Boolean(
+          t.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
+        );
+      }
+      return false;
+    }
+
+    function onKeyDown(e) {
+      if (e.key === "F11") {
+        e.preventDefault();
+        toggleFullscreen();
+        return;
+      }
+      if (e.key === "h" || e.key === "H") {
+        e.preventDefault();
+        setShowHints((v) => !v);
+        return;
+      }
+      if (e.key === "Enter" && view === "details" && selectedGame) {
+        if (e.repeat) return;
+        if (shouldDeferImmersiveHotkey(e)) return;
+        e.preventDefault();
+        handleLaunchGame(selectedGame.id);
+        return;
+      }
+      if (e.key === "Escape") {
+        if (e.repeat) return;
+        if (shouldDeferImmersiveHotkey(e)) return;
+        e.preventDefault();
+        if (view === "details") {
+          setView("library");
+          setSelectedGame(null);
+        } else if (view === "settings") {
+          setView("library");
+          loadData();
+        } else {
+          handleExit();
+        }
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleFullscreen, view, selectedGame, loadData, handleLaunchGame, handleExit]);
 
   async function handleToggleFavorite(gameId) {
     try {
@@ -242,6 +280,7 @@ export default function ImmersiveModeApp({
     >
       <AmbientAudioPlayer audio={audioCfg} />
       <Box sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{main}</Box>
+      <ImmersiveHintBar view={view} visible={showHints} />
     </Box>
   );
 }
