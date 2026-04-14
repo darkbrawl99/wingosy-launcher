@@ -11,6 +11,7 @@
     "dev": "tauri dev",
     "dev:web": "vite",
     "build": "vite build",
+    "build:windows": "npm run build && tauri build",
     "icons:extract": "node scripts/extract-console-icons.mjs",
     "icons:windows": "node scripts/generate-windows-icons.mjs",
     "preview": "vite preview",
