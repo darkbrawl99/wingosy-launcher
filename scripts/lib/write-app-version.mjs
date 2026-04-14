@@ -45,15 +45,20 @@ export function writeAppVersion(version) {
 /** Keep Cargo.lock in sync with `[package].version` (no `cargo` CLI required). */
 function syncCargoLockWorkspaceVersion(version) {
   const lockPath = join(root, "src-tauri", "Cargo.lock");
-  let text = readFileSync(lockPath, "utf8");
-  const needle = '\nname = "wingosy-launcher"\nversion = "';
-  const i = text.indexOf(needle);
-  if (i === -1) {
-    throw new Error('Could not find wingosy-launcher package block in src-tauri/Cargo.lock');
+  let text = "";
+  try {
+    text = readFileSync(lockPath, "utf8");
+  } catch {
+    // Cargo.lock may not exist yet in some CI/checkout states.
+    return;
   }
-  const start = i + needle.length;
-  const end = text.indexOf('"', start);
-  if (end === -1) throw new Error("Malformed Cargo.lock");
-  text = text.slice(0, start) + version + text.slice(end);
+
+  // Be tolerant of CRLF/LF differences on Windows.
+  const re = /(^|\r?\n)name = "wingosy-launcher"\r?\nversion = "[^"]*"/m;
+  if (!re.test(text)) {
+    // If the package block isn't present yet, don't fail the workflow — Cargo will regenerate it on build.
+    return;
+  }
+  text = text.replace(re, `$1name = "wingosy-launcher"\nversion = "${version}"`);
   writeFileSync(lockPath, text);
 }
