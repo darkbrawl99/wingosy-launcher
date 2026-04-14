@@ -85,7 +85,10 @@ jobs:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: 'Wingosy Launcher ${{ env.RELEASE_TAG }}'
           releaseBody: |
-            Assets below include the Windows installer (`.exe`) and MSI where configured.
+            **Windows installers**
+
+            - **NSIS** — `*x64-setup.exe` (graphical installer; this is the `.exe` asset)
+            - **WiX** — `*.msi` (optional MSI installer)
 
             Add a root `CHANGELOG.md` and link it here in this workflow if you want a changelog section.
           releaseDraft: false
