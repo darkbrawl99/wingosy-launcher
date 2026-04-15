@@ -34,6 +34,7 @@ export default function ImmersiveLibrary({
   const [section, setSection] = useState("all"); // all | favorites | recent
   const gridRef = useRef(null);
   const rootRef = useRef(null);
+  const scrollRef = useRef(null);
   const { colors } = useAppTheme();
 
   const favorites = useMemo(
@@ -64,6 +65,22 @@ export default function ImmersiveLibrary({
     // Some WebView/Tauri focus paths don't naturally focus this container.
     rootRef.current?.focus?.();
   }, [section]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!visibleGames.length) return;
+    // Keep the focused tile visible when navigating with keyboard/controller.
+    const id = window.requestAnimationFrame(() => {
+      const el = gridRef.current?.querySelector?.(`[data-immersive-index="${selectedIndex}"]`);
+      if (!el) return;
+      try {
+        el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      } catch {
+        // ignore
+      }
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [loading, selectedIndex, visibleGames.length]);
 
   function cycleSection(delta) {
     const idx = SECTIONS.indexOf(section);
@@ -138,6 +155,11 @@ export default function ImmersiveLibrary({
         `[data-immersive-index="${next}"]`
       );
       el?.focus?.();
+      try {
+        el?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+      } catch {
+        // ignore
+      }
     }
   }
 
@@ -232,6 +254,7 @@ export default function ImmersiveLibrary({
       </Box>
 
       <Box
+        ref={scrollRef}
         sx={{
           flex: 1,
           minHeight: 0,
