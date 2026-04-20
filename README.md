@@ -32,4 +32,4 @@ RetroArch, Dolphin, PCSX2, RPCS3, PPSSPP, DuckStation, Cemu, Eden, mGBA, melonDS
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
