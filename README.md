@@ -28,7 +28,25 @@ A Windows game launcher with RomM integration. Inspired by [Argosy Launcher](htt
 
 ## Supported Emulators
 
-RetroArch, Dolphin, PCSX2, RPCS3, PPSSPP, DuckStation, Cemu, Eden, mGBA, melonDS, Lime3DS, Flycast, xemu, Xenia, MAME
+| Emulator | Platform(s) | Download | Launch Intent | Save Sync |
+| --- | --- | :---: | :---: | :---: |
+| mGBA | Game Boy / GBC / GBA | ✅ | ✅ | ⬜ |
+| RetroArch | Multi-system | ⬜ | ⬜ | ⬜ |
+| Dolphin | GameCube / Wii | ⬜ | ⬜ | ⬜ |
+| PCSX2 | PlayStation 2 | ⬜ | ⬜ | ⬜ |
+| RPCS3 | PlayStation 3 | ⬜ | ⬜ | ⬜ |
+| PPSSPP | PSP | ⬜ | ⬜ | ⬜ |
+| DuckStation | PlayStation 1 | ⬜ | ⬜ | ⬜ |
+| Cemu | Wii U | ⬜ | ⬜ | ⬜ |
+| Eden | Switch | ⬜ | ⬜ | ⬜ |
+| melonDS | Nintendo DS | ⬜ | ⬜ | ⬜ |
+| Lime3DS | Nintendo 3DS | ⬜ | ⬜ | ⬜ |
+| Flycast | Dreamcast | ⬜ | ⬜ | ⬜ |
+| xemu | Xbox | ⬜ | ⬜ | ⬜ |
+| Xenia | Xbox 360 | ⬜ | ⬜ | ⬜ |
+| MAME | Arcade | ⬜ | ⬜ | ⬜ |
+
+✅ = implemented · ⬜ = planned
 
 ## Contributing
 
