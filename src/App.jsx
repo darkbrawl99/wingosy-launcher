@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import Library from "./components/Library";
 import GameDetails from "./components/GameDetails";
 import Settings from "./components/Settings";
+import RomDownloadsView from "./components/RomDownloadsView";
 import SetupWizard from "./components/SetupWizard";
 import ImmersiveModeApp from "./immersive/ImmersiveModeApp";
 import { invoke } from "@tauri-apps/api/tauri";
@@ -250,7 +251,7 @@ function App() {
 
   function handleNavigate(newView) {
     setView(newView);
-    if (newView === "library") {
+    if (newView === "library" || newView === "downloads") {
       setSelectedGame(null);
     }
   }
@@ -341,6 +342,19 @@ function App() {
           bgcolor: "background.default",
         }}
       >
+        {view === "downloads" && (
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              overscrollBehavior: "contain",
+            }}
+          >
+            <RomDownloadsView />
+          </Box>
+        )}
         {view === "library" && (
           <Box
             sx={{

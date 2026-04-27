@@ -10,6 +10,9 @@ import { alpha } from "@mui/material/styles";
 import ImmersiveGameTile from "./ImmersiveGameTile";
 import LauncherIcon from "../components/LauncherIcon";
 import { useAppTheme } from "../ThemeContext";
+import { useRomDownloads } from "../RomDownloadsContext";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import Badge from "@mui/material/Badge";
 
 const DEFAULT_COLUMNS = 6;
 
@@ -30,12 +33,14 @@ export default function ImmersiveLibrary({
   onSelectGame,
   onExitImmersive,
   onOpenSettings,
+  onOpenDownloads,
 }) {
   const [section, setSection] = useState("all"); // all | favorites | recent
   const gridRef = useRef(null);
   const rootRef = useRef(null);
   const scrollRef = useRef(null);
   const { colors } = useAppTheme();
+  const { getProgress, activeCount } = useRomDownloads();
 
   const favorites = useMemo(
     () => games.filter((g) => g.is_favorite),
@@ -238,6 +243,23 @@ export default function ImmersiveLibrary({
             Recent
           </Button>
           <Divider flexItem orientation="vertical" sx={{ mx: 0.5 }} />
+          {onOpenDownloads ? (
+            <Badge
+              color="primary"
+              badgeContent={activeCount > 0 ? activeCount : 0}
+              invisible={activeCount === 0}
+              max={99}
+            >
+              <Button
+                variant="outlined"
+                startIcon={<CloudDownloadIcon />}
+                onClick={onOpenDownloads}
+                sx={{ borderRadius: 2, px: 2.25, textTransform: "none", fontWeight: 700 }}
+              >
+                Downloads
+              </Button>
+            </Badge>
+          ) : null}
           <Button variant="outlined" onClick={onOpenSettings} sx={{ borderRadius: 2, px: 2.25, textTransform: "none", fontWeight: 700 }}>
             Settings
           </Button>
@@ -309,6 +331,7 @@ export default function ImmersiveLibrary({
                   focused={idx === selectedIndex}
                   onFocus={() => onSelectedIndexChange(idx)}
                   onSelect={() => onSelectGame(g)}
+                  downloadProgress={getProgress(g.id)}
                 />
               </Box>
             ))}

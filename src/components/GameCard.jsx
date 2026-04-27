@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import LinearProgress from "@mui/material/LinearProgress";
 import IconButton from "@mui/material/IconButton";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
@@ -41,7 +42,7 @@ function getCoverSrc(coverPath) {
   return coverPath;
 }
 
-export default function GameCard({ game, onClick, onToggleFavorite, onLaunch }) {
+export default function GameCard({ game, onClick, onToggleFavorite, onLaunch, downloadProgress }) {
   const [imgError, setImgError] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const { colors } = useAppTheme();
@@ -244,6 +245,29 @@ export default function GameCard({ game, onClick, onToggleFavorite, onLaunch }) 
             </Box>
           )}
         </Box>
+
+        {downloadProgress ? (
+          <Box
+            sx={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              zIndex: 6,
+              pointerEvents: "none",
+            }}
+          >
+            {downloadProgress.percent != null ? (
+              <LinearProgress
+                variant="determinate"
+                value={downloadProgress.percent}
+                sx={{ height: 5, borderRadius: 0 }}
+              />
+            ) : (
+              <LinearProgress sx={{ height: 5, borderRadius: 0 }} />
+            )}
+          </Box>
+        ) : null}
 
         {/* Hover overlay with actions */}
         <Box

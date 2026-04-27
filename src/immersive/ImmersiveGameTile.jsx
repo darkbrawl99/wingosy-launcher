@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import LinearProgress from "@mui/material/LinearProgress";
 import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import CloudIcon from "@mui/icons-material/Cloud";
@@ -54,6 +55,7 @@ export default function ImmersiveGameTile({
   focused,
   onFocus,
   onSelect,
+  downloadProgress,
 }) {
   const [imgError, setImgError] = useState(false);
   const { colors } = useAppTheme();
@@ -265,6 +267,29 @@ export default function ImmersiveGameTile({
               return null;
             })()}
           </Box>
+
+          {downloadProgress ? (
+            <Box
+              sx={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 5,
+                pointerEvents: "none",
+              }}
+            >
+              {downloadProgress.percent != null ? (
+                <LinearProgress
+                  variant="determinate"
+                  value={downloadProgress.percent}
+                  sx={{ height: 4, borderRadius: 0 }}
+                />
+              ) : (
+                <LinearProgress sx={{ height: 4, borderRadius: 0 }} />
+              )}
+            </Box>
+          ) : null}
 
           {showCover ? (
             <Box

@@ -5,6 +5,7 @@ import AmbientAudioPlayer from "./AmbientAudioPlayer";
 import ImmersiveLibrary from "./ImmersiveLibrary";
 import ImmersiveGameDetails from "./ImmersiveGameDetails";
 import ImmersiveHintBar from "./ImmersiveHintBar";
+import RomDownloadsView from "../components/RomDownloadsView";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useFullscreen } from "./useFullscreen";
 import { useGamepadKeyboardMapper } from "./useGamepadKeyboardMapper";
@@ -17,7 +18,7 @@ export default function ImmersiveModeApp({
   /** Mirrors `cfg.display.fullscreen` from App — request OS fullscreen when entering Immersive mode. */
   requestedFullscreen = false,
 }) {
-  const [view, setView] = useState("library"); // library | details | settings
+  const [view, setView] = useState("library"); // library | details | settings | downloads
   const [games, setGames] = useState([]);
   const [platforms, setPlatforms] = useState([]);
   const [selectedGame, setSelectedGame] = useState(null);
@@ -171,6 +172,8 @@ export default function ImmersiveModeApp({
         } else if (view === "settings") {
           setView("library");
           loadData();
+        } else if (view === "downloads") {
+          setView("library");
         } else {
           handleExit();
         }
@@ -196,7 +199,23 @@ export default function ImmersiveModeApp({
   }
 
   let main = null;
-  if (view === "settings") {
+  if (view === "downloads") {
+    main = (
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
+          bgcolor: "background.default",
+        }}
+      >
+        <RomDownloadsView immersive onBack={() => setView("library")} />
+      </Box>
+    );
+  } else if (view === "settings") {
     main = (
       <Box
         sx={{
@@ -263,6 +282,7 @@ export default function ImmersiveModeApp({
         onSelectGame={handleSelectGame}
         onExitImmersive={handleExit}
         onOpenSettings={() => setView("settings")}
+        onOpenDownloads={() => setView("downloads")}
       />
     );
   }

@@ -1,5 +1,6 @@
 use std::path::Path;
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 use crate::api::{RomMClient, download::DownloadManager};
 use crate::config::{AppConfig, UpdateChannel};
@@ -645,6 +646,7 @@ pub async fn sync_romm_library(
 
 #[tauri::command]
 pub async fn download_rom(
+    app: tauri::AppHandle,
     game_id: i64,
     server_url: String,
     token: String,
@@ -674,20 +676,61 @@ pub async fn download_rom(
     let dest_path = dest_dir.join(&dest_file_name);
     tracing::info!("[Download] Downloading to {:?}", dest_path);
     
+    let app_handle = app.clone();
+    let gid = game_id;
+    let _ = app_handle.emit_all(
+        "rom-download-started",
+        serde_json::json!({
+            "game_id": gid,
+            "game_name": game.name,
+        }),
+    );
+
+    let app_progress = app_handle.clone();
     let manager = DownloadManager::new();
-    manager.download_file(&download_url, &dest_path, Some(&token), |_| {}).await
-        .map_err(|e| {
-            tracing::error!("[Download] Download failed: {}", e);
-            e.to_string()
-        })?;
+    let download_result = manager
+        .download_file(&download_url, &dest_path, Some(&token), move |p| {
+            let _ = app_progress.emit_all(
+                "rom-download-progress",
+                serde_json::json!({
+                    "game_id": gid,
+                    "downloaded": p.downloaded,
+                    "total": p.total,
+                    "percent": p.percent,
+                }),
+            );
+        })
+        .await;
+
+    if let Err(e) = download_result {
+        let msg = e.to_string();
+        let _ = app_handle.emit_all(
+            "rom-download-error",
+            serde_json::json!({
+                "game_id": gid,
+                "message": msg,
+            }),
+        );
+        tracing::error!("[Download] Download failed: {}", msg);
+        return Err(msg);
+    }
     
     let mut updated_game = game.clone();
     updated_game.local_file_path = Some(dest_path.to_string_lossy().to_string());
     updated_game.sync_state = crate::models::SyncState::Synced;
     db.update_game(&updated_game).map_err(|e| e.to_string())?;
     
+    let dest_str = dest_path.to_string_lossy().to_string();
+    let _ = app_handle.emit_all(
+        "rom-download-complete",
+        serde_json::json!({
+            "game_id": gid,
+            "path": dest_str,
+        }),
+    );
+
     tracing::info!("[Download] ROM download complete: {}", file_name);
-    Ok(dest_path.to_string_lossy().to_string())
+    Ok(dest_str)
 }
 
 #[tauri::command]

@@ -11,6 +11,7 @@ import FolderOpenIcon from "@mui/icons-material/FolderOpen";
 import CloudSyncIcon from "@mui/icons-material/CloudSync";
 import GameCard from "./GameCard";
 import { tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
+import { useRomDownloads } from "../RomDownloadsContext";
 
 export default function Library({
   games,
@@ -24,6 +25,8 @@ export default function Library({
   error,
   onDismissError,
 }) {
+  const { getProgress } = useRomDownloads();
+
   return (
     <Box sx={{ p: 3 }}>
       {error && (
@@ -153,6 +156,7 @@ export default function Library({
               onClick={() => onSelectGame(game)}
               onToggleFavorite={() => onToggleFavorite(game.id)}
               onLaunch={() => onLaunchGame(game.id)}
+              downloadProgress={getProgress(game.id)}
             />
           ))}
         </Box>

@@ -53,7 +53,9 @@ jobs:
           }
           $pt = [System.TimeZoneInfo]::FindSystemTimeZoneById("Pacific Standard Time")
           $now = [System.TimeZoneInfo]::ConvertTimeFromUtc([DateTime]::UtcNow, $pt)
-          if ($now.Hour -eq 0 -and $now.Minute -eq 0) {
+          # Match Pacific *hour* midnight (00:xx). Scheduled runs often start minutes after
+          # the cron slot; requiring Minute -eq 0 caused most scheduled nightlies to no-op.
+          if ($now.Hour -eq 0) {
             "run=true" >> $env:GITHUB_OUTPUT
           } else {
             "run=false" >> $env:GITHUB_OUTPUT

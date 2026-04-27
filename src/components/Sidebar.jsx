@@ -12,7 +12,10 @@ import LauncherIcon from "./LauncherIcon";
 import FavoriteIcon from "@mui/icons-material/Favorite";
 import SettingsIcon from "@mui/icons-material/Settings";
 import HomeIcon from "@mui/icons-material/Home";
+import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
+import Badge from "@mui/material/Badge";
 import { useAppTheme } from "../ThemeContext";
+import { useRomDownloads } from "../RomDownloadsContext";
 import { tauriDragRegionProps, tauriDragRegionSx } from "../utils/isTauri";
 import {
   PLATFORM_COLORS,
@@ -117,7 +120,8 @@ export default function Sidebar({
   drawerWidth,
 }) {
   const { colors } = useAppTheme();
-  
+  const { activeCount } = useRomDownloads();
+
   return (
     <Box
       sx={{
@@ -187,6 +191,27 @@ export default function Sidebar({
             <FavoriteIcon color="error" />
           </ListItemIcon>
           <ListItemText primary="Favorites" />
+        </ListItemButton>
+
+        <ListItemButton
+          selected={currentView === "downloads"}
+          onClick={() => {
+            onSelectPlatform(null);
+            onNavigate("downloads");
+          }}
+          sx={{ borderRadius: 2, mb: 0.5 }}
+        >
+          <ListItemIcon sx={{ minWidth: 40 }}>
+            <Badge
+              color="primary"
+              badgeContent={activeCount > 0 ? activeCount : 0}
+              invisible={activeCount === 0}
+              max={99}
+            >
+              <CloudDownloadIcon />
+            </Badge>
+          </ListItemIcon>
+          <ListItemText primary="Downloads" />
         </ListItemButton>
       </List>
 

@@ -52,6 +52,7 @@ import CollectionPickerDialog from "./game/CollectionPickerDialog";
 import { invoke, convertFileSrc } from "@tauri-apps/api/tauri";
 import { open } from "@tauri-apps/api/dialog";
 import { tauriDragRegionProps, tauriDragRegionSx, tauriNoDragProps, tauriNoDragSx } from "../utils/isTauri";
+import { useRomDownloads, formatDownloadLabel } from "../RomDownloadsContext";
 
 function isLocalPath(path) {
   if (!path) return false;
@@ -98,6 +99,8 @@ export default function GameDetails({
   rommToken,
   rommUrl,
 }) {
+  const { getProgress } = useRomDownloads();
+  const romDl = getProgress(game.id);
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState(null);
   const [saves, setSaves] = useState([]);
@@ -749,7 +752,20 @@ export default function GameDetails({
           )}
         </Box>
         
-        {downloading && <LinearProgress sx={{ mb: 2, borderRadius: 2 }} />}
+        {downloading && (
+          <Box sx={{ mb: 2 }}>
+            {romDl?.percent != null ? (
+              <LinearProgress variant="determinate" value={romDl.percent} sx={{ borderRadius: 2 }} />
+            ) : (
+              <LinearProgress sx={{ borderRadius: 2 }} />
+            )}
+            {romDl ? (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                {formatDownloadLabel(romDl)}
+              </Typography>
+            ) : null}
+          </Box>
+        )}
         {downloadStatus && (
           <Alert severity={downloadStatus.type} sx={{ mb: 2 }}>
             {downloadStatus.message}

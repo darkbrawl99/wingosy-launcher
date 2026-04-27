@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useRomDownloads, formatDownloadLabel } from "../RomDownloadsContext";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
@@ -68,6 +69,8 @@ export default function ImmersiveGameDetails({
   retroachievementsEnabled = false,
 }) {
   const { colors } = useAppTheme();
+  const { getProgress } = useRomDownloads();
+  const romDl = getProgress(game.id);
   const [downloading, setDownloading] = useState(false);
   const [downloadStatus, setDownloadStatus] = useState(null);
   const [justDownloaded, setJustDownloaded] = useState(false);
@@ -405,7 +408,20 @@ export default function ImmersiveGameDetails({
 
           <Divider sx={{ my: 3, opacity: 0.12 }} />
 
-          {downloading && <LinearProgress sx={{ mb: 2, borderRadius: 2 }} />}
+          {downloading && (
+            <Box sx={{ mb: 2 }}>
+              {romDl?.percent != null ? (
+                <LinearProgress variant="determinate" value={romDl.percent} sx={{ borderRadius: 2 }} />
+              ) : (
+                <LinearProgress sx={{ borderRadius: 2 }} />
+              )}
+              {romDl ? (
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+                  {formatDownloadLabel(romDl)}
+                </Typography>
+              ) : null}
+            </Box>
+          )}
           {downloadStatus && (
             <Alert severity={downloadStatus.type} sx={{ mb: 2 }} onClose={() => setDownloadStatus(null)}>
               {downloadStatus.message}

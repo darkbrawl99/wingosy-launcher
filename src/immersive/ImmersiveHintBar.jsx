@@ -45,6 +45,11 @@ export default function ImmersiveHintBar({ view, visible = true }) {
             { label: "B / Esc", detail: "Back" },
             { label: "View / H", detail: "Hide help" },
           ]
+        : view === "downloads"
+          ? [
+              { label: "B / Esc", detail: "Back to library" },
+              { label: "View / H", detail: "Hide help" },
+            ]
         : [
             { label: "D-pad / Stick", detail: "Move" },
             { label: "A / Enter", detail: "Open" },
