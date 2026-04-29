@@ -1,5 +1,7 @@
 # Contributing
 
+**Manual QA backlog / dev todos:** [DEV_README.md](DEV_README.md).
+
 ## Setup
 
 Prerequisites: **Windows 10/11**, **Node.js 20+** (22 LTS recommended; required for the `edgedriver` devDependency), **npm 11** (pinned in `package.json` as `packageManager`), **Rust 1.70+**, **VS Build Tools (C++)**.
