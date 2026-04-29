@@ -37,11 +37,17 @@ Fast, no network. Test pure functions and data structures.
 cd src-tauri && cargo test
 ```
 
+**RetroArch — all mapped cores (network, large downloads):** validates every distinct `*_libretro.dll` in `retroarch_cores()` against the Libretro buildbot. Opt-in (ignored by default so `cargo test` stays quick):
+
+```bash
+npm run test:rust:cores
+```
+
 | Module | What it Tests |
 |--------|---------------|
 | `api/download.rs` | Progress formatting, size calculations |
 | `config/mod.rs` | Config serialization, defaults |
-| `emulators/cores.rs` | Core URLs, ZIP validation |
+| `emulators/cores.rs` | Core URLs, ZIP validation; **opt-in** `all_mapped_retroarch_core_buildbot_zips_are_valid` (every DLL in `retroarch_cores()`, hits buildbot) |
 | `emulators/detection.rs` | Emulator patterns, install types |
 | `models/game.rs` | Game creation, play time, filters |
 | `scanner/mod.rs` | ROM name cleaning, multi-disc |
@@ -69,7 +75,7 @@ cargo test --test romm_integration -- --ignored
 
 | Test | What it Tests |
 |------|---------------|
-| `test_core_download_returns_valid_zip` | Core download returns ZIP, not HTML |
+| `all_mapped_retroarch_core_buildbot_zips_are_valid` (in `emulators/cores.rs`, `#[ignore]`) | Every mapped core’s buildbot URL returns a real ZIP |
 | `test_github_release_download` | Full emulator download workflow |
 | `test_rom_download_url_format` | ROM URL construction |
 

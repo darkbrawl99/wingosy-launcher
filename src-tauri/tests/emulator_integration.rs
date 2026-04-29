@@ -528,96 +528,11 @@ mod download_workflow_tests {
 
 /// Critical download tests - these MUST pass for core functionality to work
 /// Run with: cargo test --test emulator_integration critical -- --nocapture
+///
+/// RetroArch cores: exhaustive ZIP checks live beside `core_download_url` —
+/// `cargo test all_mapped_retroarch_core_buildbot_zips_are_valid`.
 #[cfg(test)]
 mod critical_download_tests {
-    /// Verify RetroArch core download URLs are valid and return actual ZIP files
-    /// This test will FAIL if the buildbot returns HTML error pages
-    #[tokio::test]
-    async fn test_core_download_returns_valid_zip() {
-        println!("\n=== CRITICAL: Verifying Core Downloads Return Valid ZIPs ===\n");
-        
-        let cores_to_test = [
-            "mgba_libretro.dll",
-            "gambatte_libretro.dll", 
-            "snes9x_libretro.dll",
-            "genesis_plus_gx_libretro.dll",
-            "melonds_libretro.dll",
-        ];
-        
-        let client = reqwest::Client::new();
-        let mut failures = Vec::new();
-        
-        for core in &cores_to_test {
-            let url = format!(
-                "https://buildbot.libretro.com/nightly/windows/x86_64/latest/{}.zip",
-                core
-            );
-            
-            print!("  Testing {}: ", core);
-            
-            match client.get(&url).send().await {
-                Ok(resp) => {
-                    let status = resp.status();
-                    if !status.is_success() {
-                        println!("FAIL - HTTP {}", status);
-                        failures.push(format!("{}: HTTP {}", core, status));
-                        continue;
-                    }
-                    
-                    // Check content-type header (clone to avoid borrow issues)
-                    let content_type = resp.headers()
-                        .get("content-type")
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or("unknown")
-                        .to_string();
-                    
-                    // Download bytes to check ZIP signature
-                    let bytes = resp.bytes().await.unwrap();
-                    
-                    if bytes.len() < 4 {
-                        println!("FAIL - Response too small ({} bytes)", bytes.len());
-                        failures.push(format!("{}: Response too small", core));
-                        continue;
-                    }
-                    
-                    // Check ZIP magic bytes (PK\x03\x04 or PK\x05\x06)
-                    let is_zip = bytes[0] == 0x50 && bytes[1] == 0x4B 
-                        && (bytes[2] == 0x03 || bytes[2] == 0x05);
-                    
-                    // Check if it's HTML (error page)
-                    let is_html = bytes.starts_with(b"<!") || bytes.starts_with(b"<html");
-                    
-                    if is_html {
-                        println!("FAIL - Server returned HTML (likely 404 page)");
-                        failures.push(format!("{}: Server returned HTML error page", core));
-                    } else if !is_zip {
-                        println!("FAIL - Not a valid ZIP (magic: {:02x} {:02x} {:02x})", 
-                            bytes[0], bytes[1], bytes[2]);
-                        failures.push(format!("{}: Invalid ZIP signature", core));
-                    } else {
-                        println!("OK ({} bytes, {})", bytes.len(), content_type);
-                    }
-                }
-                Err(e) => {
-                    println!("FAIL - Network error: {}", e);
-                    failures.push(format!("{}: Network error", core));
-                }
-            }
-        }
-        
-        println!();
-        
-        if !failures.is_empty() {
-            println!("=== FAILURES ===");
-            for f in &failures {
-                println!("  - {}", f);
-            }
-            panic!("Core download validation failed for {} cores", failures.len());
-        }
-        
-        println!("=== All core downloads return valid ZIPs ===\n");
-    }
-    
     /// Verify that downloaded ZIPs can actually be extracted and contain DLLs
     #[tokio::test]
     async fn test_core_zip_extraction_works() {

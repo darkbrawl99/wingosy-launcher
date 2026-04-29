@@ -219,3 +219,112 @@ mod tests {
         assert!(!is_core_installed(retroarch_path, "test_libretro.dll"));
     }
 }
+
+/// Validates every RetroArch DLL listed in [`crate::models::retroarch_cores`]
+/// against the same buildbot URL pattern used at runtime (`core_download_url`).
+#[cfg(test)]
+mod retroarch_buildbot_tests {
+    use std::collections::HashSet;
+    use std::time::Duration;
+
+    use crate::models::retroarch_cores;
+
+    use super::*;
+
+    fn distinct_core_filenames_sorted() -> Vec<&'static str> {
+        let map = retroarch_cores();
+        let set: HashSet<&'static str> = map.into_values().collect();
+        let mut v: Vec<_> = set.into_iter().collect();
+        v.sort_unstable();
+        v
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn all_mapped_retroarch_core_buildbot_zips_are_valid() {
+        let cores_to_test = distinct_core_filenames_sorted();
+        println!(
+            "\n=== RetroArch cores: validating {} distinct buildbot ZIPs ===\n",
+            cores_to_test.len()
+        );
+
+        let client = reqwest::Client::builder()
+            .user_agent("wingosy-launcher-tests/1.0")
+            .timeout(Duration::from_secs(60))
+            .build()
+            .expect("reqwest Client");
+
+        let mut failures = Vec::new();
+
+        for core_dll in &cores_to_test {
+            let url = core_download_url(core_dll);
+
+            println!("  GET {core_dll}");
+
+            match client.get(&url).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    if !status.is_success() {
+                        println!("      FAIL HTTP {status}");
+                        failures.push(format!("{core_dll}: HTTP {status} ({url})"));
+                        continue;
+                    }
+
+                    match resp.bytes().await {
+                        Ok(bytes) => {
+                            if bytes.len() < 4 {
+                                println!("      FAIL reply too short ({} bytes)", bytes.len());
+                                failures.push(format!("{core_dll}: response too short"));
+                                continue;
+                            }
+
+                            let is_zip = bytes[0] == 0x50
+                                && bytes[1] == 0x4B
+                                && (bytes[2] == 0x03 || bytes[2] == 0x05);
+                            let is_html = bytes.starts_with(b"<!") || bytes.starts_with(b"<html");
+
+                            if is_html {
+                                println!("      FAIL HTML (404 page?)");
+                                failures.push(format!("{core_dll}: HTML error page ({url})"));
+                            } else if !is_zip {
+                                println!(
+                                    "      FAIL not ZIP ({:02x} {:02x} {:02x})",
+                                    bytes[0], bytes[1], bytes[2]
+                                );
+                                failures.push(format!(
+                                    "{core_dll}: invalid ZIP signature ({url})"
+                                ));
+                            } else {
+                                println!("      OK ({} KiB)", bytes.len() / 1024);
+                            }
+                        }
+                        Err(e) => {
+                            println!("      FAIL read body: {e}");
+                            failures.push(format!("{core_dll}: {e}"));
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("      FAIL {e}");
+                    failures.push(format!("{core_dll}: {e}"));
+                }
+            }
+        }
+
+        if !failures.is_empty() {
+            eprintln!("\n=== FAILURES ({}) ===", failures.len());
+            for f in &failures {
+                eprintln!("  - {}", f);
+            }
+            panic!(
+                "{} core(s) failed buildbot ZIP validation (sync `retroarch_cores()`)",
+                failures.len()
+            );
+        }
+
+        println!(
+            "\n=== OK: all {} RetroArch DLLs reachable as ZIP ===\n",
+            cores_to_test.len()
+        );
+    }
+}

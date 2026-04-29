@@ -32,6 +32,7 @@
     "test:rust": "cd src-tauri && cargo test -- --nocapture",
     "test:rust:unit": "cd src-tauri && cargo test --bin wingosy-launcher -- --nocapture",
     "test:rust:critical": "cd src-tauri && cargo test critical -- --nocapture",
+    "test:rust:cores": "cd src-tauri && cargo test all_mapped_retroarch_core_buildbot_zips_are_valid -- --ignored --nocapture",
     "test:e2e:immersive": "wdio run wdio.conf.js --spec e2e-webdriver/immersive.spec.js",
     "version:set": "node scripts/set-version.mjs",
     "version:bump": "node scripts/bump-version.mjs"
