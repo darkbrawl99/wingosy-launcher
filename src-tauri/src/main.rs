@@ -111,6 +111,7 @@ fn main() {
             commands::uninstall_emulator,
             commands::download_retroarch_core,
             commands::get_missing_cores,
+            commands::get_platform_ids_with_installed_retroarch_core,
             commands::get_retroarch_default_core_dlls,
             commands::apply_detected_paths,
             commands::set_platform_default_emulator,

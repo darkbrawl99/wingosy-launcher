@@ -113,6 +113,8 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
   const [emulators, setEmulators] = useState([]);
   /** platform_id → default libretro DLL from backend (for RetroArch menu labels). */
   const [retroarchCoreDllByPlatform, setRetroarchCoreDllByPlatform] = useState({});
+  /** Platforms where the mapped RetroArch core exists on disk (see `retroarch_cores`). */
+  const [retroarchCoreReadyPlatformIds, setRetroarchCoreReadyPlatformIds] = useState([]);
   /** Per-emulator install progress (`emulator_id` → phase + optional bytes); allows parallel installs. */
   const [emuInstallProgress, setEmuInstallProgress] = useState({});
   const emuDownloadInflightRef = useRef(new Set());
@@ -244,6 +246,34 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
       unlisteners.forEach((u) => u());
     };
   }, []);
+
+  /** Drop platform default RetroArch when the mapped core DLL is missing (avoids orphan config). */
+  useEffect(() => {
+    const toClear = Object.entries(platformDefaults).filter(
+      ([pid, eid]) => eid === "retroarch" && !retroarchCoreReadyPlatformIds.includes(pid),
+    );
+    if (toClear.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const [platformId] of toClear) {
+        try {
+          await invoke("set_platform_default_emulator", { platformId, emulatorId: null });
+          if (!cancelled) {
+            setPlatformDefaults((prev) => {
+              const next = { ...prev };
+              delete next[platformId];
+              return next;
+            });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [platformDefaults, retroarchCoreReadyPlatformIds]);
 
   useEffect(() => {
     invoke("get_app_version")
@@ -472,12 +502,14 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
 
   async function loadEmulators() {
     try {
-      const [emus, raCores] = await Promise.all([
+      const [emus, raCores, coreReady] = await Promise.all([
         invoke("get_all_emulators"),
         invoke("get_retroarch_default_core_dlls"),
+        invoke("get_platform_ids_with_installed_retroarch_core"),
       ]);
       setEmulators(emus);
       setRetroarchCoreDllByPlatform(raCores && typeof raCores === "object" ? raCores : {});
+      setRetroarchCoreReadyPlatformIds(Array.isArray(coreReady) ? coreReady : []);
     } catch (err) {
       console.error("Failed to load emulators:", err);
     }
@@ -485,8 +517,12 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
 
   async function loadMissingCores() {
     try {
-      const cores = await invoke("get_missing_cores");
+      const [cores, coreReady] = await Promise.all([
+        invoke("get_missing_cores"),
+        invoke("get_platform_ids_with_installed_retroarch_core"),
+      ]);
       setMissingCores(cores);
+      setRetroarchCoreReadyPlatformIds(Array.isArray(coreReady) ? coreReady : []);
     } catch {}
   }
 
@@ -1677,17 +1713,24 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Choose which emulator to use for each platform. &quot;Auto&quot; uses the first available.
+            RetroArch appears only after the mapped libretro core for that platform is installed.
           </Typography>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
             {platforms.map(([platform, gameCount]) => {
-              const compatibleEmus = installedEmus.filter(
-                (e) =>
+              const compatibleEmus = installedEmus.filter((e) => {
+                const platformMatch =
                   e.supported_platforms.includes(platform.id) ||
-                  e.supported_platforms.includes("*"),
-              );
+                  e.supported_platforms.includes("*");
+                if (!platformMatch) return false;
+                if (e.id === "retroarch") {
+                  return retroarchCoreReadyPlatformIds.includes(platform.id);
+                }
+                return true;
+              });
               if (compatibleEmus.length === 0) return null;
 
               const currentDefault = platformDefaults[platform.id] || "";
+              const selectValue = compatibleEmus.some((e) => e.id === currentDefault) ? currentDefault : "";
               const raDll = retroarchCoreDllByPlatform[platform.id];
 
               return (
@@ -1703,7 +1746,7 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
                   <FormControl size="small" sx={{ minWidth: 160, flex: 1 }}>
                     <InputLabel>Emulator</InputLabel>
                     <Select
-                      value={currentDefault}
+                      value={selectValue}
                       label="Emulator"
                       onChange={(e) => handleSetDefaultEmulator(platform.id, e.target.value)}
                     >
@@ -1714,9 +1757,7 @@ export default function Settings({ onBack, rommToken, rommUrl: rommUrlProp, onRo
                         <MenuItem key={emu.id} value={emu.id}>
                           {emu.id === "retroarch" && raDll
                             ? `${emu.name} (${formatLibretroDllLabel(raDll)} core)`
-                            : emu.id === "retroarch"
-                              ? `${emu.name} (libretro)`
-                              : emu.name}
+                            : emu.name}
                         </MenuItem>
                       ))}
                     </Select>

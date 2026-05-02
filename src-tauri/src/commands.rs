@@ -42,6 +42,34 @@ fn emulator_supports_platform(supported: &[String], platform_id: &str) -> bool {
     supported.contains(&platform_id.to_string()) || supported.contains(&"*".to_string())
 }
 
+/// True if `retroarch_exe` resolves to a RetroArch install whose cores folder contains
+/// the libretro DLL mapped for `platform_id` in [`retroarch_cores()`].
+fn retroarch_core_installed_for_platform(retroarch_exe: &Path, platform_id: &str) -> bool {
+    let Some(dll) = retroarch_cores().get(platform_id).copied() else {
+        return false;
+    };
+    let core_filename = dll.to_string();
+    let pb = retroarch_exe.to_path_buf();
+    let installed = find_retroarch_cores(&pb);
+    installed.iter().any(|c| {
+        c.path
+            .file_name()
+            .map(|n| n.to_string_lossy() == core_filename)
+            .unwrap_or(false)
+    })
+}
+
+fn retroarch_has_core_ready_for_platform(platform_id: &str) -> Result<bool, String> {
+    let config = AppConfig::load().map_err(|e| e.to_string())?;
+    let Some(ref ra_exe) = config.emulators.retroarch else {
+        return Ok(false);
+    };
+    if !ra_exe.exists() {
+        return Ok(false);
+    }
+    Ok(retroarch_core_installed_for_platform(ra_exe, platform_id))
+}
+
 /// Ensures a ROM filename has the correct extension for its platform.
 /// If the file already has a valid extension, returns it unchanged.
 fn ensure_rom_extension(filename: &str, platform_id: &str) -> String {
@@ -1567,6 +1595,26 @@ pub async fn get_missing_cores() -> Result<Vec<MissingCore>, String> {
     Ok(missing)
 }
 
+/// Platforms for which RetroArch's **mapped** libretro core DLL is present on disk (`retroarch_cores()` keys only).
+#[tauri::command]
+pub fn get_platform_ids_with_installed_retroarch_core() -> Result<Vec<String>, String> {
+    let config = AppConfig::load().map_err(|e| e.to_string())?;
+    let Some(ref ra_exe) = config.emulators.retroarch else {
+        return Ok(Vec::new());
+    };
+    if !ra_exe.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut ready: Vec<String> = retroarch_cores()
+        .keys()
+        .filter(|pid| retroarch_core_installed_for_platform(ra_exe, pid))
+        .cloned()
+        .collect();
+    ready.sort_unstable();
+    Ok(ready)
+}
+
 #[tauri::command]
 pub async fn apply_detected_paths() -> Result<i32, String> {
     tracing::info!("[Config] Applying detected emulator paths");
@@ -1680,13 +1728,21 @@ pub async fn get_platform_default_emulators() -> Result<std::collections::HashMa
 #[tauri::command]
 pub async fn get_emulators_for_platform(platform_id: String) -> Result<Vec<EmulatorInfo>, String> {
     let all_emulators = detect_emulators().await?;
-    
-    // Filter emulators that support this platform
+    let ra_core_ready = retroarch_has_core_ready_for_platform(&platform_id)?;
+
     let matching: Vec<EmulatorInfo> = all_emulators
         .into_iter()
-        .filter(|e| emulator_supports_platform(&e.supported_platforms, &platform_id))
+        .filter(|e| {
+            if !emulator_supports_platform(&e.supported_platforms, &platform_id) {
+                return false;
+            }
+            if e.id == "retroarch" && !ra_core_ready {
+                return false;
+            }
+            true
+        })
         .collect();
-    
+
     Ok(matching)
 }
 
