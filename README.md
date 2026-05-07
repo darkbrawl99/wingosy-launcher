@@ -50,4 +50,4 @@ A Windows game launcher with RomM integration. Inspired by [Argosy Launcher](htt
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
