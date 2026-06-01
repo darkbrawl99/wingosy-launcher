@@ -1,6 +1,6 @@
 [package]
 name = "wingosy-launcher"
-version = "0.0.38"
+version = "0.0.39"
 edition = "2021"
 authors = ["Darkbrawl <yashv99@vt.edu>"]
 description = "A Windows-native game launcher with RomM integration"
